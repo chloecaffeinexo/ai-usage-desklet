@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll Claude and ChatGPT subscription usage every 30 seconds
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=30s
+AccuracySec=1s
+Persistent=false
+Unit=ai-usage-poller.service
+
+[Install]
+WantedBy=timers.target

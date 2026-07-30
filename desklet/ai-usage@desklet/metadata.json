@@ -1,0 +1,7 @@
+{
+    "uuid": "ai-usage@desklet",
+    "name": "AI Usage",
+    "description": "Shows Claude and ChatGPT subscription usage limits, reset times, and credits.",
+    "max-instances": "1",
+    "version": "0.1.0"
+}

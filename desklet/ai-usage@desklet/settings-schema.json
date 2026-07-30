@@ -1,0 +1,107 @@
+{
+    "layout": {
+        "type": "layout",
+        "pages": [
+            "appearance-page",
+            "content-page"
+        ],
+        "appearance-page": {
+            "type": "page",
+            "title": "Appearance",
+            "sections": [
+                "appearance-section"
+            ]
+        },
+        "content-page": {
+            "type": "page",
+            "title": "Content",
+            "sections": [
+                "providers-section",
+                "details-section"
+            ]
+        },
+        "appearance-section": {
+            "type": "section",
+            "title": "Layout",
+            "keys": [
+                "card-style",
+                "density",
+                "content-width"
+            ]
+        },
+        "providers-section": {
+            "type": "section",
+            "title": "Providers",
+            "keys": [
+                "show-claude",
+                "show-chatgpt"
+            ]
+        },
+        "details-section": {
+            "type": "section",
+            "title": "Details",
+            "keys": [
+                "show-credits",
+                "show-inactive",
+                "time-format"
+            ]
+        }
+    },
+    "card-style": {
+        "type": "combobox",
+        "default": "dark",
+        "description": "Card style",
+        "options": {
+            "Dark glass": "dark",
+            "Light glass": "light",
+            "Solid dark": "solid"
+        }
+    },
+    "density": {
+        "type": "combobox",
+        "default": "compact",
+        "description": "Density",
+        "options": {
+            "Standard": "standard",
+            "Compact": "compact"
+        }
+    },
+    "content-width": {
+        "type": "spinbutton",
+        "default": 360,
+        "min": 260,
+        "max": 480,
+        "step": 10,
+        "units": "pixels",
+        "description": "Content width"
+    },
+    "show-claude": {
+        "type": "switch",
+        "default": true,
+        "description": "Show Claude"
+    },
+    "show-chatgpt": {
+        "type": "switch",
+        "default": true,
+        "description": "Show ChatGPT"
+    },
+    "show-credits": {
+        "type": "switch",
+        "default": true,
+        "description": "Show credits"
+    },
+    "show-inactive": {
+        "type": "switch",
+        "default": true,
+        "description": "Show inactive limits"
+    },
+    "time-format": {
+        "type": "combobox",
+        "default": "24h",
+        "description": "Absolute time format",
+        "options": {
+            "24-hour": "24h",
+            "12-hour": "12h"
+        }
+    }
+}

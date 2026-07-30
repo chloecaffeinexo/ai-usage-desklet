@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Editor / OS cruft
+*.swp
+*~
+.DS_Store
+
+# Runtime state (never belongs in the repo — may contain live usage data)
+state.json
+last-good.json
+poller.log

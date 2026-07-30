@@ -1,0 +1,256 @@
+.aiu-root {
+    font-family: Sans;
+}
+
+.aiu-title {
+    color: rgba(255, 255, 255, 0.96);
+    font-family: Sans;
+    font-size: 17px;
+    font-weight: 700;
+    margin-left: 18px;
+    margin-bottom: 10px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-card {
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    /* Cinnamon scales CSS lengths at 2x on the target desktop. */
+    padding: 7px;
+}
+
+.aiu-card-dark {
+    background-color: rgba(18, 18, 22, 0.55);
+}
+
+.aiu-card-light {
+    background-color: rgba(245, 245, 248, 0.55);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+.aiu-card-solid {
+    background-color: rgba(18, 18, 22, 0.92);
+}
+
+.aiu-card-spaced {
+    margin-top: 6px;
+}
+
+.aiu-card-stale {
+    opacity: 0.55;
+}
+
+.aiu-provider-header {
+    spacing: 1px;
+}
+
+.aiu-provider-name {
+    color: rgba(255, 255, 255, 0.98);
+    font-family: Sans;
+    font-size: 13px;
+    font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-error-pill {
+    color: #f87171;
+    background-color: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.38);
+    border-radius: 8px;
+    font-family: "DejaVu Sans Condensed";
+    font-size: 7px;
+    font-weight: 500;
+    padding: 1px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-resetting-pill {
+    color: #fbbf24;
+    background-color: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.38);
+    border-radius: 7px;
+    font-family: "DejaVu Sans Condensed";
+    font-size: 7px;
+    font-weight: 500;
+    margin-left: 4px;
+    padding: 1px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-bars {
+    margin-top: 5px;
+}
+
+.aiu-bar-group-spaced {
+    margin-top: 5px;
+}
+
+.aiu-label-row {
+    spacing: 8px;
+}
+
+.aiu-label,
+.aiu-value {
+    color: rgba(255, 255, 255, 0.92);
+    font-family: Sans;
+    font-size: 12px;
+    font-weight: 400;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-value {
+    font-weight: 600;
+}
+
+.aiu-percent {
+    font-family: Sans;
+    font-size: 12px;
+    font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-percent.aiu-severity-normal {
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.aiu-percent.aiu-severity-warning {
+    color: #fbbf24;
+}
+
+.aiu-percent.aiu-severity-critical {
+    color: #f87171;
+}
+
+.aiu-bar-track {
+    height: 6px;
+    margin-top: 2px;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+.aiu-bar-fill {
+    height: 6px;
+    border-radius: 3px;
+}
+
+.aiu-bar-fill.aiu-severity-normal {
+    background-color: #7dd3fc;
+}
+
+.aiu-bar-fill.aiu-severity-warning {
+    background-color: #fbbf24;
+}
+
+.aiu-bar-fill.aiu-severity-critical {
+    background-color: #f87171;
+}
+
+.aiu-card-stale .aiu-bar-fill {
+    background-color: #8a8f98;
+}
+
+.aiu-countdown-row {
+    margin-top: 1px;
+}
+
+.aiu-countdown,
+.aiu-footer {
+    color: rgba(255, 255, 255, 0.55);
+    font-family: Sans;
+    font-size: 10px;
+    font-weight: 400;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-credits-row {
+    margin-top: 5px;
+    spacing: 8px;
+}
+
+.aiu-credit-value {
+    font-family: Sans;
+    font-size: 12px;
+    font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-credit-value.aiu-severity-normal {
+    color: #7dd3fc;
+}
+
+.aiu-credit-value.aiu-severity-warning {
+    color: #fbbf24;
+}
+
+.aiu-credit-value.aiu-severity-critical {
+    color: #f87171;
+}
+
+.aiu-footer {
+    margin-top: 4px;
+}
+
+.aiu-unavailable,
+.aiu-waiting {
+    color: rgba(255, 255, 255, 0.72);
+    font-family: Sans;
+    font-size: 11px;
+    font-weight: 400;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-waiting {
+    margin-left: 18px;
+}
+
+.aiu-card-light .aiu-provider-name,
+.aiu-card-light .aiu-label,
+.aiu-card-light .aiu-value,
+.aiu-card-light .aiu-percent.aiu-severity-normal {
+    color: rgba(18, 18, 22, 0.92);
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
+}
+
+.aiu-card-light .aiu-countdown,
+.aiu-card-light .aiu-footer,
+.aiu-card-light .aiu-unavailable {
+    color: rgba(18, 18, 22, 0.58);
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
+}
+
+.aiu-card-light .aiu-bar-track {
+    background-color: rgba(18, 18, 22, 0.14);
+}
+
+.aiu-density-standard .aiu-card {
+    padding: 18px;
+}
+
+.aiu-density-standard .aiu-card-spaced {
+    margin-top: 14px;
+}
+
+.aiu-density-standard .aiu-bars {
+    margin-top: 14px;
+}
+
+.aiu-density-standard .aiu-bar-group-spaced {
+    margin-top: 14px;
+}
+
+.aiu-density-standard .aiu-bar-track {
+    margin-top: 6px;
+}
+
+.aiu-density-standard .aiu-countdown-row {
+    margin-top: 4px;
+}
+
+.aiu-density-standard .aiu-credits-row {
+    margin-top: 14px;
+}
+
+.aiu-density-standard .aiu-footer {
+    margin-top: 14px;
+}

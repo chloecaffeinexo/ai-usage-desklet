@@ -1,0 +1,11 @@
+[Unit]
+Description=Fetch Claude and ChatGPT subscription usage
+Documentation=file://%h/.local/share/ai-usage-desklet/README.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/share/ai-usage-desklet/poller.py --once
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+LogLevelMax=warning
