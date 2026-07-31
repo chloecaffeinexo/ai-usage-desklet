@@ -58,6 +58,32 @@ def _read_oauth(path: Path) -> dict[str, Any]:
     return oauth
 
 
+# Treat a token that expires within this many seconds as already expired, so a
+# request is never fired against a token that will be rejected mid-flight.
+EXPIRY_SKEW_SECONDS = 60
+
+
+def _check_not_expired(oauth: dict[str, Any]) -> None:
+    """Fail early with an actionable message if the stored token has expired.
+
+    The poller never refreshes tokens (that is the owning app's job); it only
+    reads them. ``expiresAt`` is milliseconds since the epoch. When it is missing
+    or unparseable we say nothing and let the request proceed, so older
+    credential formats keep working.
+    """
+    raw = oauth.get("expiresAt")
+    try:
+        expires_at = float(raw) / 1000.0
+    except (TypeError, ValueError):
+        return
+    if time.time() >= expires_at - EXPIRY_SKEW_SECONDS:
+        raise ClaudeError(
+            "access token expired; sign in to Claude to refresh it",
+            "token expired",
+            status_code=401,
+        )
+
+
 def _headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
@@ -101,6 +127,12 @@ def _request_json(url: str, headers: dict[str, str]) -> dict[str, Any]:
                 "rate limited",
                 status_code=429,
                 retry_after=retry_after,
+            )
+        if status in (401, 403):
+            raise ClaudeError(
+                f"authentication rejected (HTTP {status}); sign in to Claude",
+                "token expired",
+                status_code=status,
             )
         short = f"HTTP {status}" if isinstance(status, int) else "offline"
         raise ClaudeError(
@@ -241,6 +273,7 @@ def fetch(
     cached_plan: tuple[str, int] | None = None,
 ) -> tuple[dict[str, Any], int]:
     oauth = _read_oauth(credentials_path)
+    _check_not_expired(oauth)
     headers = _headers(oauth["accessToken"])
     payload = _request_json(USAGE_URL, headers)
     fetched_at = int(time.time())
