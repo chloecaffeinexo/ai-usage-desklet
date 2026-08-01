@@ -3,6 +3,41 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-08-01
+
+### Added
+
+- **Automatic Claude token keep-alive, so the Claude card no longer dies when the
+  token expires.** 0.2.0 made an expired token *legible* (a clear "token expired"
+  badge), but you still had to open the Claude app by hand to recover. This release
+  keeps the token fresh on its own.
+
+  A small helper (`keepalive.py`) runs on a systemd user timer
+  (`ai-usage-token-refresh.timer`, every 10 minutes). When the stored access token
+  is expired or within 15 minutes of expiring, it asks the **official Claude CLI**
+  (`claude auth status`) to make an authenticated call, which triggers the CLI's
+  own supported token refresh. The desklet's poller still **never** reads, writes,
+  or refreshes credentials beyond reading them; the Claude CLI remains the single
+  authoritative writer of `~/.claude/.credentials.json`, so there is no
+  second-writer / refresh-token-rotation race.
+
+### Notes
+
+- **Requires the Claude Code CLI.** The desklet's Claude card reads the CLI's own
+  credential store (`~/.claude/.credentials.json`), so anyone using that card
+  already has the CLI. If the CLI is genuinely absent, the keep-alive timer is
+  skipped at install time and the helper is a safe no-op; the card behaves as in
+  0.2.0 (works while the token is valid, shows "token expired" once it lapses).
+- No Anthropic OAuth internals (endpoints, client ids, secrets) are hardcoded or
+  committed. Refresh happens only through the official CLI.
+- The helper reads only `expiresAt` to decide whether a refresh is due, and
+  discards the CLI's output (it contains the account email) so nothing sensitive
+  is ever logged.
+
+**Upgrading:** pull the latest and re-run `install.sh`. It installs `keepalive.py`
+and enables the new timer. To verify, run
+`systemctl --user list-timers ai-usage-token-refresh.timer`.
+
 ## [0.2.0] - 2026-07-31
 
 ### Fixed
@@ -43,5 +78,6 @@ No settings or schema changes.
   fallback, staleness indicators, eight live settings, and credential-safe polling
   (reads only, no token ever written to state, logs, or error strings).
 
+[0.3.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/releases/tag/v0.1.0

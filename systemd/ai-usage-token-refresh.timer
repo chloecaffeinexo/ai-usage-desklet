@@ -1,0 +1,15 @@
+[Unit]
+Description=Nudge the Claude CLI to refresh its token before it expires
+
+[Timer]
+# Fire often enough that a run always lands inside the pre-expiry window the
+# keepalive script checks. Persistent so a token that lapsed while the machine
+# was suspended is refreshed on resume.
+OnBootSec=30s
+OnUnitActiveSec=10min
+AccuracySec=1min
+Persistent=true
+Unit=ai-usage-token-refresh.service
+
+[Install]
+WantedBy=timers.target

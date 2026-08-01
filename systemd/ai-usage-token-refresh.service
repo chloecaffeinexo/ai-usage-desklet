@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the Claude token fresh for the AI Usage desklet
+Documentation=file://%h/.local/share/ai-usage-desklet/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/share/ai-usage-desklet/keepalive.py
+UMask=0077
+NoNewPrivileges=true

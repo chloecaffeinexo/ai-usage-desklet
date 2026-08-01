@@ -31,6 +31,14 @@ limits, so a slower poll keeps it healthy). The countdowns tick locally every se
 way, so the display always looks live. When nothing has used your quota for a while, polling
 slows down on its own to save requests.
 
+A third piece keeps the **Claude** card alive on its own. Claude access tokens are short-lived
+(about 8 hours) and are refreshed by the Claude Code CLI, so if you don't open Claude for a
+while the token lapses and the card would otherwise show "token expired" until you next run it.
+A small keep-alive helper (`keepalive.py`) runs on its own systemd timer and, when the token is
+expired or about to be, asks the **official Claude CLI** to refresh it through the CLI's own
+supported path. The poller and desklet still never write your credentials; the CLI stays the
+only thing that does. If the Claude CLI isn't installed, the keep-alive is simply skipped.
+
 ## Requirements
 
 - **The Cinnamon desktop environment.** This is a Cinnamon desklet; it does not run on GNOME,

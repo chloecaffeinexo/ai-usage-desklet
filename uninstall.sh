@@ -11,9 +11,11 @@ CACHE_DST="$HOME/.cache/ai-usage-desklet"
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
 if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-    say "Stopping and disabling the timer"
+    say "Stopping and disabling the timers"
     systemctl --user disable --now ai-usage-poller.timer 2>/dev/null || true
-    rm -f "$SYSTEMD_DST/ai-usage-poller.service" "$SYSTEMD_DST/ai-usage-poller.timer"
+    systemctl --user disable --now ai-usage-token-refresh.timer 2>/dev/null || true
+    rm -f "$SYSTEMD_DST/ai-usage-poller.service" "$SYSTEMD_DST/ai-usage-poller.timer" \
+          "$SYSTEMD_DST/ai-usage-token-refresh.service" "$SYSTEMD_DST/ai-usage-token-refresh.timer"
     systemctl --user daemon-reload 2>/dev/null || true
 fi
 

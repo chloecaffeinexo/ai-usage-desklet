@@ -3,5 +3,5 @@
     "name": "AI Usage",
     "description": "Shows Claude and ChatGPT subscription usage limits, reset times, and credits.",
     "max-instances": "1",
-    "version": "0.2.0"
+    "version": "0.3.0"
 }

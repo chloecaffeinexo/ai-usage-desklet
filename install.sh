@@ -41,7 +41,7 @@ cp -r "$SRC/desklet/$UUID" "$DESKLET_DST/"
 # --- poller ---------------------------------------------------------------
 say "Installing poller to $POLLER_DST"
 mkdir -p "$POLLER_DST/providers"
-cp "$SRC/poller/poller.py" "$SRC/poller/normalise.py" "$POLLER_DST/"
+cp "$SRC/poller/poller.py" "$SRC/poller/normalise.py" "$SRC/poller/keepalive.py" "$POLLER_DST/"
 cp "$SRC/poller/providers/"*.py "$POLLER_DST/providers/"
 
 # --- systemd timer --------------------------------------------------------
@@ -49,8 +49,18 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/d
     say "Installing and starting the systemd user timer"
     mkdir -p "$SYSTEMD_DST"
     cp "$SRC/systemd/ai-usage-poller.service" "$SRC/systemd/ai-usage-poller.timer" "$SYSTEMD_DST/"
+    cp "$SRC/systemd/ai-usage-token-refresh.service" "$SRC/systemd/ai-usage-token-refresh.timer" "$SYSTEMD_DST/"
     systemctl --user daemon-reload
     systemctl --user enable --now ai-usage-poller.timer
+    # Keeps the Claude token fresh via the official CLI so the card never sits on
+    # a stale "token expired" reading. Harmless if the Claude CLI isn't installed.
+    if command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
+        systemctl --user enable --now ai-usage-token-refresh.timer
+    else
+        warn "the Claude CLI was not found; skipping the token keep-alive timer."
+        warn "the Claude card will still work while your token is valid, but will"
+        warn "show 'token expired' once it lapses until you next run the Claude app."
+    fi
 else
     warn "systemd user services are unavailable; skipping the timer."
     warn "run the poller yourself instead, e.g. from autostart:"
