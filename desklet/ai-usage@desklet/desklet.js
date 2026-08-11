@@ -23,6 +23,14 @@ const PROVIDER_URIS = {
     claude: "https://claude.ai/settings/usage",
     chatgpt: "https://chatgpt.com/#settings/Account",
 };
+// How to sign in again, per provider. Written for someone who does not live in a
+// terminal, so it names the command rather than assuming it.
+const PROVIDER_SIGNIN = {
+    claude: "Open a terminal, type  claude  and press enter, then type  /login",
+    chatgpt: "Open a terminal, type  codex login  and press enter",
+};
+// Index of the Help page in settings-schema.json's page list.
+const HELP_PAGE_INDEX = 2;
 
 
 function AIUsageDesklet(metadata, deskletId) {
@@ -54,6 +62,7 @@ AIUsageDesklet.prototype = {
         this.showChatgpt = true;
         this.showCredits = true;
         this.showInactive = true;
+        this.showHelp = true;
         this.timeFormat = "24h";
 
         this.metadata["prevent-decorations"] = true;
@@ -104,6 +113,12 @@ AIUsageDesklet.prototype = {
             Settings.BindingDirection.IN,
             "show-inactive",
             "showInactive",
+            this._onSettingChanged
+        );
+        this.settings.bindProperty(
+            Settings.BindingDirection.IN,
+            "show-help",
+            "showHelp",
             this._onSettingChanged
         );
         this.settings.bindProperty(
@@ -354,6 +369,107 @@ AIUsageDesklet.prototype = {
         return lines.join("\n");
     },
 
+    _isResetting: function (bars, now) {
+        return bars.some(bar => {
+            if (!bar || typeof bar !== "object")
+                return false;
+            let resetAt = Number(bar.resets_at);
+            return Number.isFinite(resetAt) && resetAt > 0 && now >= resetAt;
+        });
+    },
+
+    _nextAttemptText: function (provider, now) {
+        let next = Number(provider.next_attempt_at);
+        if (!Number.isFinite(next) || next <= 0)
+            return "";
+        let when = this._formatAbsoluteTime(next);
+        return next > now
+            ? `${when}, ${this._formatDuration(next - now)} away`
+            : when;
+    },
+
+    /* Plain-language account of what this card is showing, why, and what to do
+     * about it. States are tested in order of urgency and the first match wins;
+     * anything unrecognised falls through to the healthy text rather than
+     * inventing a remedy. */
+    _helpText: function (provider, bars, now) {
+        let label = provider.label || provider.id || "Provider";
+        let plan = provider.plan && provider.plan !== "Unknown"
+            ? provider.plan
+            : "plan unknown";
+        let fetched = this._formatAbsoluteTime(provider.fetched_at);
+        let signin = PROVIDER_SIGNIN[provider.id]
+            || "Sign in to the provider again";
+        let nextAttempt = this._nextAttemptText(provider, now);
+        let nextLine = nextAttempt
+            ? `Next attempt: ${nextAttempt}.`
+            : "Next attempt: as soon as the poller runs.";
+        let errorShort = String(provider.error_short || "").toLowerCase();
+        let lines = [];
+
+        if (provider.auth_state === "expired") {
+            lines.push(`${label}: the sign-in has expired, so these figures are`);
+            lines.push(`frozen at ${fetched} and will not move.`);
+            lines.push("");
+            lines.push(`Fix it: ${signin}`);
+            lines.push(`The card then recovers on its own. ${nextLine}`);
+        } else if (provider.ok === false && errorShort.indexOf("rate") >= 0) {
+            lines.push(`${label}: the provider is throttling the usage endpoint,`);
+            lines.push("which is normal and needs nothing from you.");
+            lines.push("");
+            lines.push(`Showing the last good figures, from ${fetched}.`);
+            lines.push(nextLine);
+        } else if (provider.ok === false) {
+            lines.push(
+                `${label}: could not reach the provider (${provider.error_short || "reason unknown"}).`
+            );
+            lines.push("");
+            lines.push(`Showing the last good figures, from ${fetched}.`);
+            lines.push(nextLine);
+            lines.push("If this persists, check the network first, then run:");
+            lines.push("python3 ~/.local/share/ai-usage-desklet/poller.py --once --print");
+        } else if (this._isResetting(bars, now)) {
+            lines.push(`${label} · ${plan}: a limit window has just rolled over.`);
+            lines.push("");
+            lines.push("Holding the previous figure rather than guessing at zero,");
+            lines.push(`until the next successful check. ${nextLine}`);
+        } else if (provider.plan_source !== "profile" && provider.plan_source !== "api") {
+            lines.push(`${label}: the plan is shown as ${plan}, but that was read`);
+            lines.push("from the sign-in file on this computer rather than from");
+            lines.push("the account, so it can lag a plan change by weeks.");
+            lines.push("");
+            lines.push(`To refresh it: ${signin}`);
+            lines.push("");
+            lines.push("The percentages are unaffected. They are measured by the");
+            lines.push("provider against your real plan either way.");
+        } else {
+            lines.push(`${label} · ${plan}, ${this._formatAge(provider.fetched_at, now)}.`);
+            lines.push("Plan confirmed live against the account.");
+            bars.forEach(bar => {
+                if (bar && typeof bar === "object") {
+                    lines.push(
+                        `${bar.label || "Limit"} resets ${this._formatAbsoluteTime(bar.resets_at)}.`
+                    );
+                }
+            });
+            lines.push(nextLine);
+        }
+
+        lines.push("");
+        lines.push("Click this ? for settings and the full help.");
+        return lines.join("\n");
+    },
+
+    _openHelpSettings: function () {
+        try {
+            this.configureDesklet(HELP_PAGE_INDEX);
+        } catch (error) {
+            global.logError(
+                `AI Usage desklet settings launch: ${error.message || error}`
+            );
+        }
+    },
+
     _openProvider: function (providerId) {
         let uri = PROVIDER_URIS[providerId];
         if (!uri)
@@ -409,6 +525,23 @@ AIUsageDesklet.prototype = {
                 "aiu-error-pill"
             ));
         }
+        // The help marker is the only thing on the right of the header, so the
+        // spacer goes in with it and the row is unchanged when help is off.
+        let helpIcon = null;
+        if (this.showHelp) {
+            header.add(new St.Widget({ x_expand: true }));
+            helpIcon = this._label("?", "aiu-help");
+            helpIcon.reactive = true;
+            helpIcon.track_hover = true;
+            helpIcon.can_focus = true;
+            helpIcon.connect("button-release-event", () => {
+                this._openHelpSettings();
+                // Stop here, or the click also falls through to the card and
+                // opens the provider's usage page in a browser.
+                return Clutter.EVENT_STOP;
+            });
+            header.add(helpIcon);
+        }
         card.add(header);
 
         let barsBox = new St.BoxLayout({
@@ -454,6 +587,29 @@ AIUsageDesklet.prototype = {
             providerId: provider.id,
             tooltip,
         });
+
+        if (helpIcon) {
+            let helpTooltip = new Tooltips.Tooltip(
+                helpIcon,
+                this._helpText(provider, bars, now)
+            );
+            // Cinnamon has no tooltip manager, and the pointer is still inside
+            // the card while it is over the ?, so both tooltips would show at
+            // once. Mute the card's while the marker is hovered.
+            helpIcon.connect("enter-event", () => {
+                tooltip.preventShow = true;
+                tooltip.hide();
+                return Clutter.EVENT_PROPAGATE;
+            });
+            helpIcon.connect("leave-event", () => {
+                tooltip.preventShow = false;
+                return Clutter.EVENT_PROPAGATE;
+            });
+            this._tooltips.push({
+                providerId: provider.id,
+                tooltip: helpTooltip,
+            });
+        }
         return card;
     },
 

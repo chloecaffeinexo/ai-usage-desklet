@@ -126,6 +126,11 @@ def _ensure_display_fields(reading: dict[str, Any]) -> dict[str, Any]:
         else:
             short = "bad response"
         reading["error_short"] = short
+    # Defaults for the phase 8 fields, so a last-good entry written by an older
+    # build still renders instead of tripping the desklet's guards.
+    reading.setdefault("plan_source", "unknown")
+    reading.setdefault("auth_state", "ok")
+    reading.setdefault("next_attempt_at", None)
     credits = reading.get("credits")
     if isinstance(credits, dict) and "short_text" not in credits:
         if credits.get("kind") == "money":
@@ -144,23 +149,49 @@ def _save_success(
     reading: dict[str, Any],
     now: int,
     plan_fetched_at: int | None = None,
+    plan_source: str | None = None,
 ) -> None:
     reading = _ensure_display_fields(reading)
     providers = cache.setdefault("providers", {})
     entry: dict[str, Any] = {"saved_at": now, "data": copy.deepcopy(reading)}
     if plan_fetched_at is not None:
         entry["plan_fetched_at"] = plan_fetched_at
+    if plan_source is not None:
+        entry["plan_source"] = plan_source
     providers[reading["id"]] = entry
 
 
-def _cached_claude_plan(cache: dict[str, Any]) -> tuple[str, int] | None:
+def _cached_claude_plan(cache: dict[str, Any]) -> tuple[str, int, str] | None:
+    """Return the cached plan label as ``(label, fetched_at, source)``.
+
+    Entries written before phase 8 carry no source. They are reported as
+    ``credentials`` because that is where every pre-phase-8 label came from,
+    which makes the next poll re-check the account rather than trusting them.
+    """
     entry = _last_good_entry(cache, "claude")
     reading = entry.get("data") if entry else None
     plan = reading.get("plan") if isinstance(reading, dict) else None
     fetched_at = entry.get("plan_fetched_at") if entry else None
+    source = entry.get("plan_source") if entry else None
+    if not isinstance(source, str) or not source:
+        source = "credentials"
     if isinstance(plan, str) and isinstance(fetched_at, int):
-        return plan, fetched_at
+        return plan, fetched_at, source
     return None
+
+
+AUTH_ERROR_SHORTS = {"token expired", "no auth"}
+
+
+def _auth_state(status_code: int | None, error_short: str) -> str:
+    """Whether this failure means the user has to sign in again.
+
+    A missing or unreadable credentials file counts, because the remedy is the
+    same: run the tool in a terminal and sign in.
+    """
+    if status_code in (401, 403) or error_short in AUTH_ERROR_SHORTS:
+        return "expired"
+    return "ok"
 
 
 def _failure_reading(
@@ -169,14 +200,17 @@ def _failure_reading(
     label: str,
     message: str,
     error_short: str,
+    status_code: int | None = None,
 ) -> dict[str, Any]:
     previous = _last_good_reading(cache, provider_id)
     if previous is None:
-        return provider_error(provider_id, label, message, error_short)
-    previous["ok"] = False
-    previous["stale"] = True
-    previous["error"] = message[:240]
-    previous["error_short"] = error_short[:16]
+        previous = provider_error(provider_id, label, message, error_short)
+    else:
+        previous["ok"] = False
+        previous["stale"] = True
+        previous["error"] = message[:240]
+        previous["error_short"] = error_short[:16]
+    previous["auth_state"] = _auth_state(status_code, error_short)
     return previous
 
 
@@ -275,6 +309,12 @@ def _record_throttle(
 
 
 def _newest_mtime_under(root: Path) -> float | None:
+    """Newest mtime under a directory, or the file's own mtime if given a file."""
+    try:
+        if root.is_file():
+            return root.stat().st_mtime
+    except OSError:
+        return None
     newest: float | None = None
     try:
         for directory, _, files in os.walk(root):
@@ -289,19 +329,24 @@ def _newest_mtime_under(root: Path) -> float | None:
     return newest
 
 
-def _quota_activity_recent(
-    codex_sessions: Path,
-    claude_history: Path,
-    now: int,
-) -> bool:
-    timestamps = []
-    codex_mtime = _newest_mtime_under(codex_sessions)
-    if codex_mtime is not None:
-        timestamps.append(codex_mtime)
-    try:
-        timestamps.append(claude_history.stat().st_mtime)
-    except OSError:
-        pass
+def _quota_activity_recent(roots: list[Path], now: int) -> bool:
+    """Has either tool consumed quota recently?
+
+    Judged by transcript writes, because every earlier signal failed. Process
+    presence was tried twice and matched permanently running background
+    processes. ``~/.claude/history.jsonl`` was tried next and only the CLI writes
+    it, so the desktop app looked idle while in use (verified 2026-08-11: ten
+    hours stale mid-session). Session transcript files are written by both the
+    CLI and the desktop app on every exchange, and by nothing when idle.
+
+    Measured cost of the two walks on this machine: about 10 ms total across 433
+    files, once per 30 s tick.
+    """
+    timestamps = [
+        mtime
+        for mtime in (_newest_mtime_under(root) for root in roots)
+        if mtime is not None
+    ]
     return bool(timestamps) and now - max(timestamps) <= ACTIVITY_WINDOW_SECONDS
 
 
@@ -346,7 +391,7 @@ def collect(
     claude_credentials: Path,
     chatgpt_auth: Path,
     codex_sessions: Path,
-    claude_history: Path,
+    claude_sessions: Path,
     *,
     force: bool,
     backoff_enabled: bool,
@@ -359,7 +404,7 @@ def collect(
     runtime.pop("last_attempt_at", None)
     idle = (
         idle_slowdown_enabled
-        and not _quota_activity_recent(codex_sessions, claude_history, now)
+        and not _quota_activity_recent([codex_sessions, claude_sessions], now)
     )
     runtime["freshness_idle"] = idle
     runtime["freshness_checked_at"] = now
@@ -383,18 +428,22 @@ def collect(
         )
     else:
         try:
-            claude_reading, plan_fetched_at = claude.fetch(
+            claude_reading, plan_fetched_at, plan_source = claude.fetch(
                 claude_credentials, _cached_claude_plan(cache)
             )
             claude_reading = _ensure_display_fields(claude_reading)
             providers.append(claude_reading)
             _record_success(claude_status, "claude", now, idle)
-            _save_success(cache, claude_reading, now, plan_fetched_at)
+            _save_success(
+                cache, claude_reading, now, plan_fetched_at, plan_source
+            )
         except claude.ClaudeError as exc:
             message = str(exc)
             short = exc.error_short
             providers.append(
-                _failure_reading(cache, "claude", "Claude", message, short)
+                _failure_reading(
+                    cache, "claude", "Claude", message, short, exc.status_code
+                )
             )
             if exc.status_code == 429:
                 delay = _record_throttle(
@@ -460,7 +509,9 @@ def collect(
             message = str(exc)
             short = exc.error_short
             providers.append(
-                _failure_reading(cache, "chatgpt", "ChatGPT", message, short)
+                _failure_reading(
+                    cache, "chatgpt", "ChatGPT", message, short, exc.status_code
+                )
             )
             if exc.status_code == 429:
                 delay = _record_throttle(
@@ -484,6 +535,18 @@ def collect(
             )
             _safe_log(f"chatgpt: {message}")
 
+    # Stamp the next scheduled attempt on every card, including the ones skipped
+    # this tick, so the desklet can say when a stalled provider will be retried
+    # instead of leaving the user to guess.
+    for reading in providers:
+        provider_id = reading.get("id")
+        if provider_id not in BASE_INTERVALS:
+            continue
+        next_poll_at = _runtime_provider(cache, provider_id).get("next_poll_at")
+        reading["next_attempt_at"] = (
+            next_poll_at if isinstance(next_poll_at, int) and next_poll_at > 0 else None
+        )
+
     return state_document(providers, now), cache
 
 
@@ -492,7 +555,7 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
         args.claude_credentials,
         args.chatgpt_auth,
         args.codex_sessions,
-        args.claude_history,
+        args.claude_sessions,
         force=args.force,
         backoff_enabled=not args.no_backoff,
         idle_slowdown_enabled=not args.no_idle_slowdown,
@@ -532,10 +595,10 @@ def parse_args() -> argparse.Namespace:
         help="Codex session directory used only as an API-failure fallback",
     )
     parser.add_argument(
-        "--claude-history",
+        "--claude-sessions",
         type=Path,
-        default=Path.home() / ".claude" / "history.jsonl",
-        help="Claude history file used only for activity freshness",
+        default=Path.home() / ".claude" / "projects",
+        help="Claude session transcript directory used only for activity freshness",
     )
     parser.add_argument("--force", action="store_true", help="poll both providers now")
     parser.add_argument(

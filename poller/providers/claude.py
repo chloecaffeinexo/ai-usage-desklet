@@ -24,6 +24,12 @@ DEFAULT_CREDENTIALS = Path.home() / ".claude" / ".credentials.json"
 REQUEST_TIMEOUT = (5, 15)
 MAX_ATTEMPTS = 3
 RETRYABLE_STATUS = {408, 500, 502, 503, 504}
+PLAN_TTL_SECONDS = 3_600
+PLAN_BY_RATE_LIMIT_TIER = {
+    "default_claude_ai": "Pro",
+    "default_claude_max_5x": "Max 5x",
+    "default_claude_max_20x": "Max 20x",
+}
 
 
 class ClaudeError(Exception):
@@ -150,6 +156,14 @@ def _request_json(url: str, headers: dict[str, str]) -> dict[str, Any]:
 
 
 def _plan_from_credentials(oauth: dict[str, Any]) -> str | None:
+    """Read the plan label out of the local sign-in file.
+
+    Only a fallback. Claude Code writes ``subscriptionType`` when the user signs
+    in and does not rewrite it on a silent token refresh, so it keeps whatever
+    plan was in force at sign-in time and can lag a plan change indefinitely.
+    Verified on 2026-08-11: the file said "pro" while the account had been on Max
+    since July.
+    """
     raw = oauth.get("subscriptionType")
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -157,39 +171,83 @@ def _plan_from_credentials(oauth: dict[str, Any]) -> str | None:
     return cleaned.title()
 
 
-def _plan_from_profile(headers: dict[str, str]) -> str:
+def _plan_from_profile(headers: dict[str, str]) -> str | None:
+    """Read the plan label from the account itself. Returns None if unreadable.
+
+    ``rate_limit_tier`` is tried first because it is the only field that
+    separates the Max tiers from each other.
+    """
     payload = _request_json(PROFILE_URL, headers)
-    account = payload.get("account")
-    organization = payload.get("organization")
-    plan = "Pro" if isinstance(account, dict) and account.get("has_claude_pro") else None
-    if plan is None and isinstance(organization, dict):
-        raw = organization.get("organization_type")
-        if isinstance(raw, str) and raw:
-            plan = raw.lower().removeprefix("claude_").replace("_", " ").title()
-    return plan or "Unknown"
+    account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
+    organization = (
+        payload.get("organization")
+        if isinstance(payload.get("organization"), dict)
+        else {}
+    )
+
+    tier = organization.get("rate_limit_tier")
+    if isinstance(tier, str):
+        mapped = PLAN_BY_RATE_LIMIT_TIER.get(tier.strip().lower())
+        if mapped:
+            return mapped
+
+    if account.get("has_claude_max"):
+        return "Max"
+
+    org_type = organization.get("organization_type")
+    if isinstance(org_type, str) and org_type.strip():
+        return org_type.strip().lower().removeprefix("claude_").replace("_", " ").title()
+
+    if account.get("has_claude_pro"):
+        return "Pro"
+
+    return None
 
 
 def _resolve_plan(
     oauth: dict[str, Any],
     headers: dict[str, str],
-    cached_plan: tuple[str, int] | None,
-) -> tuple[str, int]:
+    cached_plan: tuple[str, int, str] | None,
+) -> tuple[str, int, str]:
+    """Resolve the plan label, preferring the account over the local file.
+
+    Returns ``(label, fetched_at, source)``. ``source`` is ``profile`` whenever
+    the value originated at the account, whether it was read this tick or cached
+    within the TTL, and ``credentials`` when it came from the local sign-in file
+    and may therefore be out of date. The desklet uses that distinction to decide
+    whether to warn about the label.
+
+    The profile endpoint is consulted at most once per TTL, so at the 120 s Claude
+    interval this costs one extra request per thirty ticks. A profile failure
+    never fails the provider: the usage numbers do not depend on it.
+    """
     now = int(time.time())
-    plan = _plan_from_credentials(oauth)
-    if plan is not None:
-        return plan, now
 
     if cached_plan is not None:
-        cached_label, cached_at = cached_plan
-        if cached_label and now - cached_at < 3_600:
-            return cached_label, cached_at
+        cached_label, cached_at, cached_source = cached_plan
+        if (
+            cached_label
+            and cached_source == "profile"
+            and 0 <= now - cached_at < PLAN_TTL_SECONDS
+        ):
+            return cached_label, cached_at, cached_source
 
     try:
-        return _plan_from_profile(headers), now
+        plan = _plan_from_profile(headers)
     except ClaudeError:
-        # Cache the fallback decision for an hour too, so a profile outage cannot
-        # turn every 30-second oneshot into an extra failing HTTP request.
-        return (cached_plan[0] if cached_plan else "Unknown"), now
+        plan = None
+    if plan:
+        return plan, now, "profile"
+
+    # A previously seen account value, even an old one, still beats the local
+    # file, which can be months stale.
+    if cached_plan is not None and cached_plan[0]:
+        return cached_plan
+
+    plan = _plan_from_credentials(oauth)
+    if plan:
+        return plan, now, "credentials"
+    return "Unknown", now, "unknown"
 
 
 def _limit_bar(item: Any, index: int) -> dict[str, Any] | None:
@@ -270,8 +328,8 @@ def _credits(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 def fetch(
     credentials_path: Path = DEFAULT_CREDENTIALS,
-    cached_plan: tuple[str, int] | None = None,
-) -> tuple[dict[str, Any], int]:
+    cached_plan: tuple[str, int, str] | None = None,
+) -> tuple[dict[str, Any], int, str]:
     oauth = _read_oauth(credentials_path)
     _check_not_expired(oauth)
     headers = _headers(oauth["accessToken"])
@@ -291,16 +349,18 @@ def fetch(
     if not bars:
         raise ClaudeError("usage response contained no valid limits", "bad response")
 
-    plan, plan_fetched_at = _resolve_plan(oauth, headers, cached_plan)
+    plan, plan_fetched_at, plan_source = _resolve_plan(oauth, headers, cached_plan)
 
     return (
         {
             "id": "claude",
             "label": "Claude",
             "plan": plan,
+            "plan_source": plan_source,
             "ok": True,
             "stale": False,
             "source": "api",
+            "auth_state": "ok",
             "fetched_at": fetched_at,
             "error": None,
             "error_short": None,
@@ -308,4 +368,5 @@ def fetch(
             "credits": _credits(payload),
         },
         plan_fetched_at,
+        plan_source,
     )

@@ -14,6 +14,10 @@ on your desktop, styled to stay readable over any wallpaper or theme, and update
 - **Credit balance / spend** where the provider reports one.
 - A per-card **staleness indicator**: if a reading can't be refreshed, the card dims and shows
   how long ago it was last good, rather than lying or going blank.
+- The **plan you are actually on**, read from your account rather than from a local file, so an
+  upgrade shows up straight away.
+- A **? on each card** that explains, in plain language, what the card is currently showing,
+  why, and what to do about it. Click it for the full help.
 
 ## How it works
 
@@ -29,7 +33,15 @@ Two small pieces, so a rendering hiccup can never take down your desktop shell:
 Poll rate is per-provider: ChatGPT every 30 s, Claude every 120 s (its usage endpoint rate
 limits, so a slower poll keeps it healthy). The countdowns tick locally every second either
 way, so the display always looks live. When nothing has used your quota for a while, polling
-slows down on its own to save requests.
+slows down on its own to save requests; "a while" is judged by whether either tool has written
+a session transcript recently, which is the only signal that reliably distinguishes a tool you
+are using from one that merely has a background process running.
+
+Plan names come from your provider account, checked at most once an hour and cached in between.
+If the account can't be reached, the poller falls back to the plan recorded in the local sign-in
+file and says so, because that file is written when you sign in and does not change when you
+change plan. Either way the percentages are unaffected: they are calculated by the provider
+against your real limits.
 
 A third piece keeps the **Claude** card alive on its own. Claude access tokens are short-lived
 (about 8 hours) and are refreshed by the Claude Code CLI, so if you don't open Claude for a
@@ -102,9 +114,27 @@ Right-click the desklet → **Configure**:
 - **Card width**.
 - **Show / hide** each provider card, the credits row, and inactive limit bars.
 - **Reset-time format** — 24-hour or 12-hour (used in the tooltip).
+- **Show the ? marker** on each card.
 
 Hover a card for a tooltip with absolute reset times and full figures. Click a card to open
 that provider's usage page in your browser.
+
+### The ? marker
+
+Each card carries a small **?** in its top right. Hover it and it tells you what that card is
+showing and what, if anything, you should do:
+
+| Card state | What the ? tells you |
+|---|---|
+| Sign-in expired | That the figures are frozen, and the exact command to sign in again |
+| Being throttled | That this is normal, and when the next attempt happens |
+| Unreachable | The reason, the age of the figures shown, and how to test the poller by hand |
+| Window rolled over | That it is holding the previous figure rather than guessing at zero |
+| Plan name may be stale | That the name came from the local sign-in file, and how to refresh it |
+| Healthy | The plan, the age, and when each limit resets |
+
+Clicking the **?** opens the desklet's settings on a **Help** page with the sign-in commands,
+the manual check command, and the log location.
 
 ## Compatibility
 

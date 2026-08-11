@@ -3,7 +3,8 @@
         "type": "layout",
         "pages": [
             "appearance-page",
-            "content-page"
+            "content-page",
+            "help-page"
         ],
         "appearance-page": {
             "type": "page",
@@ -44,6 +45,41 @@
                 "show-credits",
                 "show-inactive",
                 "time-format"
+            ]
+        },
+        "help-page": {
+            "type": "page",
+            "title": "Help",
+            "sections": [
+                "help-when-section",
+                "help-commands-section",
+                "help-marker-section"
+            ]
+        },
+        "help-when-section": {
+            "type": "section",
+            "title": "When a card looks wrong",
+            "keys": [
+                "help-text-stale",
+                "help-text-grey",
+                "help-text-plan"
+            ]
+        },
+        "help-commands-section": {
+            "type": "section",
+            "title": "Fixing a sign-in",
+            "keys": [
+                "help-text-claude-signin",
+                "help-text-chatgpt-signin",
+                "help-text-check"
+            ]
+        },
+        "help-marker-section": {
+            "type": "section",
+            "title": "The ? marker",
+            "keys": [
+                "show-help",
+                "help-text-log"
             ]
         }
     },
@@ -103,5 +139,38 @@
             "24-hour": "24h",
             "12-hour": "12h"
         }
+    },
+    "help-text-stale": {
+        "type": "label",
+        "description": "The percentages always come from the provider and are always measured against your real plan, even when the plan name on the card is out of date."
+    },
+    "help-text-grey": {
+        "type": "label",
+        "description": "A card that dims to grey is holding its last known figures because a check failed. It is not saying your usage stopped. Hover the ? on that card to see why and when the next attempt is."
+    },
+    "help-text-plan": {
+        "type": "label",
+        "description": "The plan name is read from your account once an hour. If the account cannot be reached it falls back to the sign-in file on this computer, which can lag a plan change by weeks. The ? says which one is in use."
+    },
+    "help-text-claude-signin": {
+        "type": "label",
+        "description": "Claude: open a terminal, type  claude  and press enter, then type  /login"
+    },
+    "help-text-chatgpt-signin": {
+        "type": "label",
+        "description": "ChatGPT: open a terminal, type  codex login  and press enter"
+    },
+    "help-text-check": {
+        "type": "label",
+        "description": "To check the poller by hand:  python3 ~/.local/share/ai-usage-desklet/poller.py --once --print"
+    },
+    "help-text-log": {
+        "type": "label",
+        "description": "The log is at  ~/.cache/ai-usage-desklet/poller.log"
+    },
+    "show-help": {
+        "type": "switch",
+        "default": true,
+        "description": "Show the ? marker on each card"
     }
 }

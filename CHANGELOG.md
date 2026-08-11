@@ -3,6 +3,42 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-08-11
+
+### Fixed
+
+- **The plan name could be months out of date.** The poller took it from
+  `subscriptionType` in the local Claude sign-in file. That field is written when you
+  sign in and is *not* rewritten when the token silently refreshes, so an account
+  upgraded from Pro to Max kept reporting Pro indefinitely. The plan is now read from
+  the account profile, cached for an hour, with the local file used only as a fallback
+  when the account cannot be reached. The rate-limit tier is read too, so Max 5x and
+  Max 20x are told apart. Usage percentages were never affected by this; they are
+  calculated by the provider against your real limits.
+
+- **Idle slowdown misfired during active use.** Activity was judged from
+  `~/.claude/history.jsonl`, which only the Claude CLI writes. Working in the desktop
+  app left it untouched, so the poller decided you were idle and dropped to the 600 s
+  interval while you were mid-session, making cards look up to ten minutes out of date.
+  Activity is now judged from session transcript writes under `~/.claude/projects` and
+  `~/.codex/sessions`, which both the CLI and the desktop app produce. This is the third
+  approach to this signal; the two earlier ones keyed off process names and matched
+  permanently running background processes.
+
+### Added
+
+- **A ? marker on each card**, explaining in plain language what the card is showing,
+  why, and what to do about it: an expired sign-in names the command to fix it, a
+  throttled card says the throttling is expected and when the next attempt is, an
+  unreachable card gives the manual check command, a rolled-over window says it is
+  holding the previous figure rather than guessing at zero, and a plan name that came
+  from the local file says so. Clicking it opens a new **Help** page in settings.
+- A **Show the ? marker** setting, on by default.
+- Three additive fields in `state.json` — `plan_source`, `auth_state` and
+  `next_attempt_at` — which is what lets the desklet distinguish a live plan name from
+  a possibly stale one and say when a stalled card will be retried. Existing readers are
+  unaffected.
+
 ## [0.3.0] - 2026-08-01
 
 ### Added
