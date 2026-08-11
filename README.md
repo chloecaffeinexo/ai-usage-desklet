@@ -4,7 +4,7 @@ A Cinnamon desklet that shows your **Claude** and **ChatGPT** subscription usage
 usage limits as bars with percentages, live reset countdowns, and any credit balance. It sits
 on your desktop, styled to stay readable over any wallpaper or theme, and updates itself.
 
-![Light card style](screenshots/light.png)
+![Dark card style, the default](screenshots/dark.png)
 
 ## What it shows
 
@@ -109,7 +109,10 @@ python3 ~/.local/share/ai-usage-desklet/poller.py --once
 
 Right-click the desklet → **Configure**:
 
-- **Card style** — dark glass (default), light glass, or solid.
+- **Card style** — dark glass (default, pictured at the top), light glass, or solid.
+
+  ![Light card style](screenshots/light.png)
+
 - **Density** — compact (default) or standard spacing.
 - **Card width**.
 - **Show / hide** each provider card, the credits row, and inactive limit bars.
