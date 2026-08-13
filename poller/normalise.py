@@ -1,14 +1,103 @@
-"""Shared normalisation helpers for the AI Usage Desklet poller."""
+"""Shared normalisation and request helpers for the AI Usage Desklet poller."""
 
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import requests
+
 
 VALID_SEVERITIES = {"normal", "warning", "critical"}
+REQUEST_TIMEOUT = (5, 15)
+MAX_ATTEMPTS = 3
+RETRYABLE_STATUS = {408, 500, 502, 503, 504}
+
+
+class ProviderError(Exception):
+    """A deliberately sanitised provider error."""
+
+    def __init__(
+        self,
+        message: str,
+        error_short: str = "bad response",
+        *,
+        status_code: int | None = None,
+        retry_after: int | None = None,
+    ):
+        super().__init__(message)
+        self.error_short = error_short[:16]
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
+def request_json(
+    url: str,
+    headers: dict[str, str],
+    signin_hint: str = "sign in again",
+    none_on_status: frozenset[int] = frozenset(),
+) -> dict[str, Any] | None:
+    """GET a JSON document with retries and sanitised errors.
+
+    A status listed in ``none_on_status`` returns None instead of raising, so the
+    caller can fall through to an alternative URL.
+    """
+    response = None
+    last_exception: requests.RequestException | None = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+            last_exception = None
+        except requests.RequestException as exc:
+            last_exception = exc
+            if attempt + 1 < MAX_ATTEMPTS:
+                time.sleep(0.25 * (2**attempt))
+                continue
+            break
+        if response.status_code not in RETRYABLE_STATUS or attempt + 1 == MAX_ATTEMPTS:
+            break
+        time.sleep(0.25 * (2**attempt))
+
+    if last_exception is not None:
+        raise ProviderError(
+            f"request failed ({type(last_exception).__name__})", "offline"
+        ) from None
+    if response is None:
+        raise ProviderError("request failed (unavailable)", "offline")
+    status = response.status_code
+    if status in none_on_status:
+        return None
+    if status == 429:
+        try:
+            retry_after = max(0, int(float(response.headers.get("Retry-After"))))
+        except (TypeError, ValueError, OverflowError):
+            retry_after = 300
+        raise ProviderError(
+            "request failed (HTTP 429)",
+            "rate limited",
+            status_code=429,
+            retry_after=retry_after,
+        )
+    if status in (401, 403):
+        raise ProviderError(
+            f"authentication rejected (HTTP {status}); {signin_hint}",
+            "token expired",
+            status_code=status,
+        )
+    if status != 200:
+        raise ProviderError(
+            f"request failed (HTTP {status})", f"HTTP {status}", status_code=status
+        )
+    try:
+        payload = response.json()
+    except requests.JSONDecodeError:
+        raise ProviderError("request returned invalid JSON", "bad response") from None
+    if not isinstance(payload, dict):
+        raise ProviderError("request returned an unexpected shape", "bad response")
+    return payload
 
 
 def number(value: Any, default: float | None = None) -> float | None:
@@ -30,8 +119,7 @@ def integer(value: Any, default: int | None = None) -> int | None:
 
 
 def percent(value: Any) -> float:
-    parsed = number(value, 0.0)
-    assert parsed is not None
+    parsed = number(value, 0.0) or 0.0
     parsed = min(100.0, max(0.0, parsed))
     return int(parsed) if parsed.is_integer() else round(parsed, 1)
 
@@ -39,8 +127,7 @@ def percent(value: Any) -> float:
 def severity(value: Any, percentage: Any) -> str:
     if isinstance(value, str) and value.lower() in VALID_SEVERITIES:
         return value.lower()
-    parsed = number(percentage, 0.0)
-    assert parsed is not None
+    parsed = number(percentage, 0.0) or 0.0
     if parsed >= 90:
         return "critical"
     if parsed >= 75:
@@ -70,7 +157,7 @@ def safe_id(value: Any, fallback: str) -> str:
     return cleaned or fallback
 
 
-def claude_limit_label(kind: Any) -> str:
+def claude_limit_label(kind: Any, scope: Any = None) -> str:
     if not isinstance(kind, str):
         return "Limit"
     lowered = kind.lower()
@@ -78,6 +165,12 @@ def claude_limit_label(kind: Any) -> str:
         return "Session"
     if lowered == "weekly_all":
         return "Weekly"
+    # Scoped limits carry the model they apply to; use the API's own name so a
+    # new model labels itself without a code change.
+    model = scope.get("model") if isinstance(scope, dict) else None
+    name = model.get("display_name") if isinstance(model, dict) else None
+    if lowered.startswith("weekly") and isinstance(name, str) and name.strip():
+        return f"Weekly ({name.strip()})"
     if "opus" in lowered:
         return "Weekly (Opus)"
     return lowered.replace("_", " ").title()

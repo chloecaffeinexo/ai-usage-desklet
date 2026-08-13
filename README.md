@@ -3,13 +3,14 @@
 A Cinnamon desklet that shows your **Claude** and **ChatGPT** subscription usage at a glance:
 usage limits as bars with percentages, live reset countdowns, and any credit balance. It sits
 on your desktop, styled to stay readable over any wallpaper or theme, and updates itself.
+Either provider card can be hidden, so it works just as well with one provider as with both.
 
 ![Dark card style, the default](screenshots/dark.png)
 
 ## What it shows
 
-- **Usage bars** for each limit window (Claude session + weekly, ChatGPT weekly) with a live
-  percentage, coloured by severity (blue → amber → red as a limit fills).
+- **Usage bars** for each limit window (Claude session + weeklies, ChatGPT weekly) with a
+  live percentage, coloured by severity (blue → amber → red as a limit fills).
 - **Reset countdowns** that tick every second and roll over on their own.
 - **Credit balance / spend** where the provider reports one.
 - A per-card **staleness indicator**: if a reading can't be refreshed, the card dims and shows
@@ -118,6 +119,13 @@ Right-click the desklet → **Configure**:
 - **Show / hide** each provider card, the credits row, and inactive limit bars.
 - **Reset-time format** — 24-hour or 12-hour (used in the tooltip).
 - **Show the ? marker** on each card.
+
+The toggles let the desklet be as detailed or as quiet as you like — everything on with the
+help markers, pared back to just the active bars, or a single provider if you only use one:
+
+| Everything on | Minimal | One provider |
+|---|---|---|
+| ![All features enabled](screenshots/all-features.png) | ![Minimal: active bars only](screenshots/minimal.png) | ![Claude card only](screenshots/single-provider.png) |
 
 Hover a card for a tooltip with absolute reset times and full figures. Click a card to open
 that provider's usage page in your browser.

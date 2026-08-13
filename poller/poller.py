@@ -10,9 +10,9 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from normalise import provider_error, state_document
+from normalise import ProviderError, provider_error, state_document
 from providers import chatgpt, claude
 
 
@@ -109,38 +109,10 @@ def _last_good_reading(cache: dict[str, Any], provider_id: str) -> dict[str, Any
 
 
 def _ensure_display_fields(reading: dict[str, Any]) -> dict[str, Any]:
-    if "error_short" not in reading:
-        message = str(reading.get("error") or "")
-        lowered = message.lower()
-        if not message:
-            short = None
-        elif "http 429" in lowered:
-            short = "rate limited"
-        elif "http " in lowered:
-            marker = lowered.find("http ")
-            short = message[marker : marker + 8].rstrip(")")
-        elif "credential" in lowered or "auth" in lowered:
-            short = "no auth"
-        elif "request failed" in lowered:
-            short = "offline"
-        else:
-            short = "bad response"
-        reading["error_short"] = short
-    # Defaults for the phase 8 fields, so a last-good entry written by an older
-    # build still renders instead of tripping the desklet's guards.
+    reading.setdefault("error_short", None)
     reading.setdefault("plan_source", "unknown")
     reading.setdefault("auth_state", "ok")
     reading.setdefault("next_attempt_at", None)
-    credits = reading.get("credits")
-    if isinstance(credits, dict) and "short_text" not in credits:
-        if credits.get("kind") == "money":
-            credits["short_text"] = (
-                str(credits.get("used_text") or "—") if credits.get("enabled") else "off"
-            )
-        elif credits.get("unlimited"):
-            credits["short_text"] = "unlimited"
-        else:
-            credits["short_text"] = str(credits.get("balance_text", "0"))
     return reading
 
 
@@ -151,7 +123,6 @@ def _save_success(
     plan_fetched_at: int | None = None,
     plan_source: str | None = None,
 ) -> None:
-    reading = _ensure_display_fields(reading)
     providers = cache.setdefault("providers", {})
     entry: dict[str, Any] = {"saved_at": now, "data": copy.deepcopy(reading)}
     if plan_fetched_at is not None:
@@ -162,12 +133,7 @@ def _save_success(
 
 
 def _cached_claude_plan(cache: dict[str, Any]) -> tuple[str, int, str] | None:
-    """Return the cached plan label as ``(label, fetched_at, source)``.
-
-    Entries written before phase 8 carry no source. They are reported as
-    ``credentials`` because that is where every pre-phase-8 label came from,
-    which makes the next poll re-check the account rather than trusting them.
-    """
+    """Return the cached plan label as ``(label, fetched_at, source)``."""
     entry = _last_good_entry(cache, "claude")
     reading = entry.get("data") if entry else None
     plan = reading.get("plan") if isinstance(reading, dict) else None
@@ -215,29 +181,15 @@ def _failure_reading(
 
 
 def _runtime_provider(cache: dict[str, Any], provider_id: str) -> dict[str, Any]:
-    runtime = cache.setdefault("runtime", {})
-    providers = runtime.setdefault("providers", {})
-    base_interval = BASE_INTERVALS[provider_id]
-    status = providers.setdefault(
-        provider_id,
-        {
-            "failures": 0,
-            "throttle_streak": 0,
-            "effective_interval": base_interval,
-            "next_poll_at": 0,
-        },
-    )
+    providers = cache.setdefault("runtime", {}).setdefault("providers", {})
+    status = providers.get(provider_id)
     if not isinstance(status, dict):
         status = {}
         providers[provider_id] = status
     status.setdefault("failures", 0)
     status.setdefault("throttle_streak", 0)
-    status.setdefault("effective_interval", base_interval)
-    if "next_poll_at" not in status:
-        legacy_next = status.pop("next_attempt_at", 0)
-        status["next_poll_at"] = legacy_next if isinstance(legacy_next, int) else 0
-    else:
-        status.pop("next_attempt_at", None)
+    status.setdefault("effective_interval", BASE_INTERVALS[provider_id])
+    status.setdefault("next_poll_at", 0)
     return status
 
 
@@ -387,6 +339,66 @@ def _skipped_reading(
     return _mark_age(reading, now, stale_after)
 
 
+def _poll_provider(
+    cache: dict[str, Any],
+    current_state: dict[str, Any],
+    provider_id: str,
+    label: str,
+    fetcher: Callable[[], tuple[dict[str, Any], dict[str, Any]]],
+    now: int,
+    idle: bool,
+    force: bool,
+    backoff_enabled: bool,
+) -> dict[str, Any]:
+    """Poll one provider if it is due, applying the shared scheduling rules.
+
+    ``fetcher`` returns ``(reading, save_extra)`` where ``save_extra`` holds any
+    provider-specific keyword arguments for ``_save_success``.
+    """
+    status = _runtime_provider(cache, provider_id)
+    interval = _scheduled_interval(provider_id, status, idle)
+    next_poll = status.get("next_poll_at")
+    if not force and isinstance(next_poll, int) and next_poll > now:
+        return _skipped_reading(
+            current_state, cache, provider_id, label, now, interval * 3
+        )
+
+    try:
+        reading, save_extra = fetcher()
+    except ProviderError as exc:
+        message = str(exc)
+        if exc.status_code == 429:
+            delay = _record_throttle(status, provider_id, now, exc.retry_after)
+            _safe_log(f"{provider_id}: rate limited; retry in {delay}s")
+        else:
+            _record_failure(status, provider_id, now, idle, backoff_enabled)
+            _safe_log(f"{provider_id}: {message}")
+        return _failure_reading(
+            cache, provider_id, label, message, exc.error_short, exc.status_code
+        )
+    except Exception as exc:
+        message = f"unexpected failure ({type(exc).__name__})"
+        _record_failure(status, provider_id, now, idle, backoff_enabled)
+        _safe_log(f"{provider_id}: {message}")
+        return _failure_reading(cache, provider_id, label, message, "bad response")
+
+    poll_status = reading.pop("_poll_status_code", None)
+    poll_retry_after = reading.pop("_poll_retry_after", None)
+    reading = _ensure_display_fields(reading)
+    # A non-stale reading is a full success whatever its source; the ChatGPT
+    # local-snapshot fallback marks itself stale.
+    if not reading.get("stale"):
+        _record_success(status, provider_id, now, idle)
+        _save_success(cache, reading, now, **save_extra)
+    elif poll_status == 429:
+        delay = _record_throttle(status, provider_id, now, poll_retry_after)
+        _safe_log(f"{provider_id}: rate limited; retry in {delay}s; local fallback used")
+    else:
+        _record_failure(status, provider_id, now, idle, backoff_enabled)
+        _safe_log(f"{provider_id}: {reading.get('error') or 'local fallback used'}")
+    return reading
+
+
 def collect(
     claude_credentials: Path,
     chatgpt_auth: Path,
@@ -401,7 +413,6 @@ def collect(
     cache = _load_last_good()
     current_state = _load_json(STATE_PATH)
     runtime = cache.setdefault("runtime", {})
-    runtime.pop("last_attempt_at", None)
     idle = (
         idle_slowdown_enabled
         and not _quota_activity_recent([codex_sessions, claude_sessions], now)
@@ -409,140 +420,41 @@ def collect(
     runtime["freshness_idle"] = idle
     runtime["freshness_checked_at"] = now
 
-    providers: list[dict[str, Any]] = []
-
-    claude_status = _runtime_provider(cache, "claude")
-    claude_interval = _scheduled_interval("claude", claude_status, idle)
-    claude_next = claude_status.get("next_poll_at")
-    claude_due = force or not isinstance(claude_next, int) or claude_next <= now
-    if not claude_due:
-        providers.append(
-            _skipped_reading(
-                current_state,
-                cache,
-                "claude",
-                "Claude",
-                now,
-                claude_interval * 3,
-            )
+    def fetch_claude() -> tuple[dict[str, Any], dict[str, Any]]:
+        reading, plan_fetched_at, plan_source = claude.fetch(
+            claude_credentials, _cached_claude_plan(cache)
         )
-    else:
-        try:
-            claude_reading, plan_fetched_at, plan_source = claude.fetch(
-                claude_credentials, _cached_claude_plan(cache)
-            )
-            claude_reading = _ensure_display_fields(claude_reading)
-            providers.append(claude_reading)
-            _record_success(claude_status, "claude", now, idle)
-            _save_success(
-                cache, claude_reading, now, plan_fetched_at, plan_source
-            )
-        except claude.ClaudeError as exc:
-            message = str(exc)
-            short = exc.error_short
-            providers.append(
-                _failure_reading(
-                    cache, "claude", "Claude", message, short, exc.status_code
-                )
-            )
-            if exc.status_code == 429:
-                delay = _record_throttle(
-                    claude_status, "claude", now, exc.retry_after
-                )
-                _safe_log(f"claude: rate limited; retry in {delay}s")
-            else:
-                _record_failure(
-                    claude_status, "claude", now, idle, backoff_enabled
-                )
-                _safe_log(f"claude: {message}")
-        except Exception as exc:
-            message = f"unexpected failure ({type(exc).__name__})"
-            providers.append(
-                _failure_reading(
-                    cache, "claude", "Claude", message, "bad response"
-                )
-            )
-            _record_failure(
-                claude_status, "claude", now, idle, backoff_enabled
-            )
-            _safe_log(f"claude: {message}")
+        return reading, {
+            "plan_fetched_at": plan_fetched_at,
+            "plan_source": plan_source,
+        }
 
-    chatgpt_status = _runtime_provider(cache, "chatgpt")
-    chatgpt_interval = _scheduled_interval("chatgpt", chatgpt_status, idle)
-    chatgpt_next = chatgpt_status.get("next_poll_at")
-    chatgpt_due = force or not isinstance(chatgpt_next, int) or chatgpt_next <= now
-    if not chatgpt_due:
-        providers.append(
-            _skipped_reading(
-                current_state,
-                cache,
-                "chatgpt",
-                "ChatGPT",
-                now,
-                chatgpt_interval * 3,
-            )
+    def fetch_chatgpt() -> tuple[dict[str, Any], dict[str, Any]]:
+        return chatgpt.fetch(chatgpt_auth, codex_sessions), {}
+
+    providers = [
+        _poll_provider(
+            cache,
+            current_state,
+            provider_id,
+            label,
+            fetcher,
+            now,
+            idle,
+            force,
+            backoff_enabled,
         )
-    else:
-        try:
-            chatgpt_reading = chatgpt.fetch(chatgpt_auth, codex_sessions)
-            poll_status = chatgpt_reading.pop("_poll_status_code", None)
-            poll_retry_after = chatgpt_reading.pop("_poll_retry_after", None)
-            chatgpt_reading = _ensure_display_fields(chatgpt_reading)
-            providers.append(chatgpt_reading)
-            if chatgpt_reading.get("source") == "api":
-                _record_success(chatgpt_status, "chatgpt", now, idle)
-                _save_success(cache, chatgpt_reading, now)
-            else:
-                if poll_status == 429:
-                    delay = _record_throttle(
-                        chatgpt_status, "chatgpt", now, poll_retry_after
-                    )
-                    _safe_log(f"chatgpt: rate limited; retry in {delay}s; local fallback used")
-                else:
-                    _record_failure(
-                        chatgpt_status, "chatgpt", now, idle, backoff_enabled
-                    )
-                    _safe_log(
-                        f"chatgpt: {chatgpt_reading.get('error') or 'local fallback used'}"
-                    )
-        except chatgpt.ChatGPTError as exc:
-            message = str(exc)
-            short = exc.error_short
-            providers.append(
-                _failure_reading(
-                    cache, "chatgpt", "ChatGPT", message, short, exc.status_code
-                )
-            )
-            if exc.status_code == 429:
-                delay = _record_throttle(
-                    chatgpt_status, "chatgpt", now, exc.retry_after
-                )
-                _safe_log(f"chatgpt: rate limited; retry in {delay}s")
-            else:
-                _record_failure(
-                    chatgpt_status, "chatgpt", now, idle, backoff_enabled
-                )
-                _safe_log(f"chatgpt: {message}")
-        except Exception as exc:
-            message = f"unexpected failure ({type(exc).__name__})"
-            providers.append(
-                _failure_reading(
-                    cache, "chatgpt", "ChatGPT", message, "bad response"
-                )
-            )
-            _record_failure(
-                chatgpt_status, "chatgpt", now, idle, backoff_enabled
-            )
-            _safe_log(f"chatgpt: {message}")
+        for provider_id, label, fetcher in (
+            ("claude", "Claude", fetch_claude),
+            ("chatgpt", "ChatGPT", fetch_chatgpt),
+        )
+    ]
 
     # Stamp the next scheduled attempt on every card, including the ones skipped
     # this tick, so the desklet can say when a stalled provider will be retried
     # instead of leaving the user to guess.
     for reading in providers:
-        provider_id = reading.get("id")
-        if provider_id not in BASE_INTERVALS:
-            continue
-        next_poll_at = _runtime_provider(cache, provider_id).get("next_poll_at")
+        next_poll_at = _runtime_provider(cache, reading["id"]).get("next_poll_at")
         reading["next_attempt_at"] = (
             next_poll_at if isinstance(next_poll_at, int) and next_poll_at > 0 else None
         )

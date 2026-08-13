@@ -7,9 +7,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-import requests
-
-from normalise import epoch_from_iso, integer, percent, severity, window_label
+from normalise import (
+    ProviderError,
+    epoch_from_iso,
+    integer,
+    number,
+    percent,
+    request_json,
+    severity,
+    window_label,
+)
 
 
 USAGE_URLS = (
@@ -17,42 +24,23 @@ USAGE_URLS = (
     "https://chatgpt.com/backend-api/wham/usage",
 )
 DEFAULT_AUTH = Path.home() / ".codex" / "auth.json"
-REQUEST_TIMEOUT = (5, 15)
-MAX_ATTEMPTS = 3
-RETRYABLE_STATUS = {408, 500, 502, 503, 504}
-
-
-class ChatGPTError(Exception):
-    """A deliberately sanitised provider error."""
-
-    def __init__(
-        self,
-        message: str,
-        error_short: str = "bad response",
-        *,
-        status_code: int | None = None,
-        retry_after: int | None = None,
-    ):
-        super().__init__(message)
-        self.error_short = error_short[:16]
-        self.status_code = status_code
-        self.retry_after = retry_after
+SIGNIN_HINT = "run codex login"
 
 
 def _read_auth(path: Path) -> tuple[str, str]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ChatGPTError(
+        raise ProviderError(
             f"credentials unavailable ({type(exc).__name__})", "no auth"
         ) from None
     tokens = data.get("tokens") if isinstance(data, dict) else None
     if not isinstance(tokens, dict):
-        raise ChatGPTError("credentials missing tokens", "no auth")
+        raise ProviderError("credentials missing tokens", "no auth")
     access_token = tokens.get("access_token")
     account_id = tokens.get("account_id")
     if not isinstance(access_token, str) or not isinstance(account_id, str):
-        raise ChatGPTError("credentials missing access token or account id", "no auth")
+        raise ProviderError("credentials missing access token or account id", "no auth")
     return access_token, account_id
 
 
@@ -64,57 +52,18 @@ def _request_usage(access_token: str, account_id: str) -> dict[str, Any]:
         "originator": "codex_cli_rs",
         "Accept": "application/json",
     }
+    # The primary endpoint may 404 on some accounts; fall through to the spare.
+    last = len(USAGE_URLS) - 1
     for index, url in enumerate(USAGE_URLS):
-        response = None
-        last_exception: requests.RequestException | None = None
-        for attempt in range(MAX_ATTEMPTS):
-            try:
-                response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-                last_exception = None
-            except requests.RequestException as exc:
-                last_exception = exc
-                if attempt + 1 < MAX_ATTEMPTS:
-                    time.sleep(0.25 * (2**attempt))
-                    continue
-                break
-            if response.status_code not in RETRYABLE_STATUS or attempt + 1 == MAX_ATTEMPTS:
-                break
-            time.sleep(0.25 * (2**attempt))
-
-        if last_exception is not None:
-            raise ChatGPTError(
-                f"request failed ({type(last_exception).__name__})", "offline"
-            ) from None
-        if response is None:
-            raise ChatGPTError("request failed (unavailable)", "offline")
-        if response.status_code == 404 and index == 0:
-            continue
-        if response.status_code != 200:
-            if response.status_code == 429:
-                raw_retry = response.headers.get("Retry-After")
-                try:
-                    retry_after = max(0, int(float(raw_retry)))
-                except (TypeError, ValueError, OverflowError):
-                    retry_after = 300
-                raise ChatGPTError(
-                    "request failed (HTTP 429)",
-                    "rate limited",
-                    status_code=429,
-                    retry_after=retry_after,
-                )
-            raise ChatGPTError(
-                f"request failed (HTTP {response.status_code})",
-                f"HTTP {response.status_code}",
-                status_code=response.status_code,
-            )
-        try:
-            payload = response.json()
-        except requests.JSONDecodeError:
-            raise ChatGPTError("request returned invalid JSON", "bad response") from None
-        if not isinstance(payload, dict):
-            raise ChatGPTError("request returned an unexpected shape", "bad response")
-        return payload
-    raise ChatGPTError("usage endpoint unavailable", "bad response")
+        payload = request_json(
+            url,
+            headers,
+            SIGNIN_HINT,
+            none_on_status=frozenset() if index == last else frozenset({404}),
+        )
+        if payload is not None:
+            return payload
+    raise ProviderError("usage endpoint unavailable", "bad response")
 
 
 def _reverse_lines(path: Path):
@@ -236,13 +185,20 @@ def _window(item: Any, bar_id: str) -> dict[str, Any] | None:
     }
 
 
+def _balance_text(balance: Any) -> str:
+    """Render a credit balance readably: the API sends up to ten decimals."""
+    parsed = number(balance)
+    if parsed is not None:
+        return f"{parsed:,.2f}"
+    return str(balance) if balance is not None else "0"
+
+
 def _credits(payload: dict[str, Any]) -> dict[str, Any]:
     raw = payload.get("credits")
     credits = raw if isinstance(raw, dict) else {}
     unlimited = bool(credits.get("unlimited"))
     reached = bool(credits.get("overage_limit_reached"))
-    balance = credits.get("balance")
-    balance_text = str(balance) if balance is not None else "0"
+    balance_text = _balance_text(credits.get("balance"))
     return {
         "kind": "balance",
         "enabled": bool(credits.get("has_credits")) or unlimited,
@@ -261,7 +217,7 @@ def fetch(
     access_token, account_id = _read_auth(auth_path)
     try:
         payload = _request_usage(access_token, account_id)
-    except ChatGPTError as exc:
+    except ProviderError as exc:
         fallback = _local_fallback(sessions_dir or (Path.home() / ".codex" / "sessions"))
         if fallback is not None:
             fallback["error"] = f"live API unavailable ({exc}); using local snapshot"
@@ -271,7 +227,7 @@ def fetch(
         raise
     rate_limit = payload.get("rate_limit")
     if not isinstance(rate_limit, dict):
-        raise ChatGPTError("usage response missing rate limit", "bad response")
+        raise ProviderError("usage response missing rate limit", "bad response")
 
     bars = []
     primary = _window(rate_limit.get("primary_window"), "primary")
@@ -281,7 +237,7 @@ def fetch(
     if secondary is not None:
         bars.append(secondary)
     if not bars:
-        raise ChatGPTError("usage response contained no valid limits", "bad response")
+        raise ProviderError("usage response contained no valid limits", "bad response")
 
     raw_plan = payload.get("plan_type")
     plan = raw_plan.replace("_", " ").title() if isinstance(raw_plan, str) else "Unknown"

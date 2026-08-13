@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from normalise import (
+    ProviderError,
     claude_limit_label,
     epoch_from_iso,
     format_money,
     percent,
+    request_json,
     safe_id,
     severity,
 )
@@ -21,9 +22,7 @@ from normalise import (
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 DEFAULT_CREDENTIALS = Path.home() / ".claude" / ".credentials.json"
-REQUEST_TIMEOUT = (5, 15)
-MAX_ATTEMPTS = 3
-RETRYABLE_STATUS = {408, 500, 502, 503, 504}
+SIGNIN_HINT = "sign in to Claude"
 PLAN_TTL_SECONDS = 3_600
 PLAN_BY_RATE_LIMIT_TIER = {
     "default_claude_ai": "Pro",
@@ -31,42 +30,22 @@ PLAN_BY_RATE_LIMIT_TIER = {
     "default_claude_max_20x": "Max 20x",
 }
 
-
-class ClaudeError(Exception):
-    """A deliberately sanitised provider error."""
-
-    def __init__(
-        self,
-        message: str,
-        error_short: str = "bad response",
-        *,
-        status_code: int | None = None,
-        retry_after: int | None = None,
-    ):
-        super().__init__(message)
-        self.error_short = error_short[:16]
-        self.status_code = status_code
-        self.retry_after = retry_after
+# Treat a token that expires within this many seconds as already expired, so a
+# request is never fired against a token that will be rejected mid-flight.
+EXPIRY_SKEW_SECONDS = 60
 
 
 def _read_oauth(path: Path) -> dict[str, Any]:
     try:
-        import json
-
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ClaudeError(
+        raise ProviderError(
             f"credentials unavailable ({type(exc).__name__})", "no auth"
         ) from None
     oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
     if not isinstance(oauth, dict) or not isinstance(oauth.get("accessToken"), str):
-        raise ClaudeError("credentials missing access token", "no auth")
+        raise ProviderError("credentials missing access token", "no auth")
     return oauth
-
-
-# Treat a token that expires within this many seconds as already expired, so a
-# request is never fired against a token that will be rejected mid-flight.
-EXPIRY_SKEW_SECONDS = 60
 
 
 def _check_not_expired(oauth: dict[str, Any]) -> None:
@@ -83,7 +62,7 @@ def _check_not_expired(oauth: dict[str, Any]) -> None:
     except (TypeError, ValueError):
         return
     if time.time() >= expires_at - EXPIRY_SKEW_SECONDS:
-        raise ClaudeError(
+        raise ProviderError(
             "access token expired; sign in to Claude to refresh it",
             "token expired",
             status_code=401,
@@ -97,62 +76,6 @@ def _headers(token: str) -> dict[str, str]:
         "User-Agent": "claude-cli/2.0.0 (external, cli)",
         "Accept": "application/json",
     }
-
-
-def _request_json(url: str, headers: dict[str, str]) -> dict[str, Any]:
-    response = None
-    last_exception: requests.RequestException | None = None
-    for attempt in range(MAX_ATTEMPTS):
-        try:
-            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-            last_exception = None
-        except requests.RequestException as exc:
-            last_exception = exc
-            if attempt + 1 < MAX_ATTEMPTS:
-                time.sleep(0.25 * (2**attempt))
-                continue
-            break
-        if response.status_code not in RETRYABLE_STATUS or attempt + 1 == MAX_ATTEMPTS:
-            break
-        time.sleep(0.25 * (2**attempt))
-
-    if last_exception is not None:
-        raise ClaudeError(
-            f"request failed ({type(last_exception).__name__})", "offline"
-        ) from None
-    if response is None or response.status_code != 200:
-        status = response.status_code if response is not None else "unavailable"
-        if response is not None and response.status_code == 429:
-            raw_retry = response.headers.get("Retry-After")
-            try:
-                retry_after = max(0, int(float(raw_retry)))
-            except (TypeError, ValueError, OverflowError):
-                retry_after = 300
-            raise ClaudeError(
-                "request failed (HTTP 429)",
-                "rate limited",
-                status_code=429,
-                retry_after=retry_after,
-            )
-        if status in (401, 403):
-            raise ClaudeError(
-                f"authentication rejected (HTTP {status}); sign in to Claude",
-                "token expired",
-                status_code=status,
-            )
-        short = f"HTTP {status}" if isinstance(status, int) else "offline"
-        raise ClaudeError(
-            f"request failed (HTTP {status})",
-            short,
-            status_code=status if isinstance(status, int) else None,
-        )
-    try:
-        payload = response.json()
-    except requests.JSONDecodeError:
-        raise ClaudeError("request returned invalid JSON", "bad response") from None
-    if not isinstance(payload, dict):
-        raise ClaudeError("request returned an unexpected shape", "bad response")
-    return payload
 
 
 def _plan_from_credentials(oauth: dict[str, Any]) -> str | None:
@@ -177,7 +100,7 @@ def _plan_from_profile(headers: dict[str, str]) -> str | None:
     ``rate_limit_tier`` is tried first because it is the only field that
     separates the Max tiers from each other.
     """
-    payload = _request_json(PROFILE_URL, headers)
+    payload = request_json(PROFILE_URL, headers, SIGNIN_HINT)
     account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
     organization = (
         payload.get("organization")
@@ -234,7 +157,7 @@ def _resolve_plan(
 
     try:
         plan = _plan_from_profile(headers)
-    except ClaudeError:
+    except ProviderError:
         plan = None
     if plan:
         return plan, now, "profile"
@@ -261,7 +184,7 @@ def _limit_bar(item: Any, index: int) -> dict[str, Any] | None:
     bar_id = "weekly" if kind == "weekly_all" else safe_id(kind, f"limit_{index}")
     return {
         "id": bar_id,
-        "label": claude_limit_label(kind),
+        "label": claude_limit_label(kind, item.get("scope")),
         "percent": pct,
         "severity": severity(item.get("severity"), pct),
         "resets_at": reset,
@@ -333,7 +256,7 @@ def fetch(
     oauth = _read_oauth(credentials_path)
     _check_not_expired(oauth)
     headers = _headers(oauth["accessToken"])
-    payload = _request_json(USAGE_URL, headers)
+    payload = request_json(USAGE_URL, headers, SIGNIN_HINT)
     fetched_at = int(time.time())
 
     raw_limits = payload.get("limits")
@@ -347,7 +270,7 @@ def fetch(
     if not bars:
         bars = _fallback_bars(payload)
     if not bars:
-        raise ClaudeError("usage response contained no valid limits", "bad response")
+        raise ProviderError("usage response contained no valid limits", "bad response")
 
     plan, plan_fetched_at, plan_source = _resolve_plan(oauth, headers, cached_plan)
 

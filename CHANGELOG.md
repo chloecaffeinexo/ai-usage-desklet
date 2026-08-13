@@ -3,6 +3,39 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-08-13
+
+### Added
+
+- **Scoped weekly limits label themselves.** Anthropic's usage API now returns a
+  third limit, `weekly_scoped`, carrying the model it applies to. The poller
+  reads that model name from the response, so the bar renders as
+  "Weekly (Fable)" today and follows whatever model the API names next, with the
+  old hardcoded Opus special case kept only as a fallback.
+
+### Fixed
+
+- **ChatGPT credit balances render readably.** The API sends up to ten decimal
+  places; the card now shows two (`509.43`, not `509.4273940000`).
+- **The desklet no longer rebuilds its display when nothing changed.** It
+  previously tore down and recreated every card on each 30-second refresh, which
+  also destroyed any tooltip being read at that moment. It now skips the rebuild
+  unless the provider data actually differs, and the "updated … ago" footer is
+  kept live by the existing one-second countdown timer instead, so it ticks in
+  real time rather than jumping twice a minute.
+
+### Changed
+
+- **Screenshot set replaced.** Now light, dark, all features enabled, minimal
+  (active bars only), and single provider, showing the toggle range; the stale
+  solid-style shot removed and the README settings section now shows the set.
+- **Internal cleanup, no behaviour change.** The two providers' duplicated
+  request/retry/error code merged into one shared helper, the poller's
+  duplicated per-provider scheduling blocks merged into one routine,
+  compatibility shims for cache files written by pre-0.3 builds removed, and
+  leftover debug counters dropped from the desklet. About 150 lines net,
+  removed while adding the features above.
+
 ## [0.4.0] - 2026-08-11
 
 ### Fixed
@@ -114,6 +147,8 @@ No settings or schema changes.
   fallback, staleness indicators, eight live settings, and credential-safe polling
   (reads only, no token ever written to state, logs, or error strings).
 
+[0.5.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/releases/tag/v0.1.0

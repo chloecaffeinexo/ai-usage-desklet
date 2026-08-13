@@ -31,6 +31,18 @@ const PROVIDER_SIGNIN = {
 };
 // Index of the Help page in settings-schema.json's page list.
 const HELP_PAGE_INDEX = 2;
+// Settings key to property, all bound identically.
+const SETTING_BINDINGS = [
+    ["card-style", "cardStyle"],
+    ["density", "density"],
+    ["content-width", "contentWidth"],
+    ["show-claude", "showClaude"],
+    ["show-chatgpt", "showChatgpt"],
+    ["show-credits", "showCredits"],
+    ["show-inactive", "showInactive"],
+    ["show-help", "showHelp"],
+    ["time-format", "timeFormat"],
+];
 
 
 function AIUsageDesklet(metadata, deskletId) {
@@ -46,14 +58,13 @@ AIUsageDesklet.prototype = {
         this._timeoutId = null;
         this._countdownTimeoutId = null;
         this._countdownLabels = [];
-        this._providerCards = {};
+        this._footerLabels = [];
         this._root = null;
-        this._tooltips = [];
         this._removed = false;
         this._settingsReady = false;
-        this._stateReadCount = 0;
-        this._countdownTickCount = 0;
-        this._lastOpenedUri = null;
+        // The providers portion of the last rendered state, used to skip a full
+        // rebuild when nothing changed, so an open tooltip is not torn down.
+        this._renderedKey = null;
 
         this.cardStyle = "dark";
         this.density = "compact";
@@ -73,60 +84,14 @@ AIUsageDesklet.prototype = {
             this.metadata.uuid,
             deskletId
         );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "card-style",
-            "cardStyle",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "density",
-            "density",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "content-width",
-            "contentWidth",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "show-claude",
-            "showClaude",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "show-chatgpt",
-            "showChatgpt",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "show-credits",
-            "showCredits",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "show-inactive",
-            "showInactive",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "show-help",
-            "showHelp",
-            this._onSettingChanged
-        );
-        this.settings.bindProperty(
-            Settings.BindingDirection.IN,
-            "time-format",
-            "timeFormat",
-            this._onSettingChanged
-        );
+        SETTING_BINDINGS.forEach(([key, property]) => {
+            this.settings.bindProperty(
+                Settings.BindingDirection.IN,
+                key,
+                property,
+                this._onSettingChanged
+            );
+        });
         this._settingsReady = true;
         this._refresh();
         this._scheduleCountdownTick();
@@ -135,6 +100,7 @@ AIUsageDesklet.prototype = {
     _onSettingChanged: function () {
         if (!this._settingsReady || this._removed)
             return;
+        this._renderedKey = null;
         this._refresh();
     },
 
@@ -258,7 +224,10 @@ AIUsageDesklet.prototype = {
             if (entry.label && !entry.label.is_finalized())
                 this._updateCountdownEntry(entry, now);
         });
-        this._countdownTickCount += 1;
+        this._footerLabels.forEach(entry => {
+            if (entry.label && !entry.label.is_finalized())
+                entry.label.set_text(this._formatAge(entry.fetchedAt, now));
+        });
     },
 
     _bar: function (bar, now, index) {
@@ -479,7 +448,6 @@ AIUsageDesklet.prototype = {
                 uri,
                 global.create_app_launch_context()
             );
-            this._lastOpenedUri = uri;
         } catch (error) {
             global.logError(
                 `AI Usage desklet browser launch: ${error.message || error}`
@@ -507,7 +475,6 @@ AIUsageDesklet.prototype = {
             this._openProvider(provider.id);
             return Clutter.EVENT_STOP;
         });
-        this._providerCards[provider.id] = card;
 
         let header = new St.BoxLayout({
             vertical: false,
@@ -574,22 +541,24 @@ AIUsageDesklet.prototype = {
             );
         }
 
-        card.add(this._label(
+        let footer = this._label(
             this._formatAge(provider.fetched_at, now),
             "aiu-footer"
-        ));
+        );
+        card.add(footer);
+        this._footerLabels.push({
+            label: footer,
+            fetchedAt: Number(provider.fetched_at),
+            providerId: provider.id,
+        });
 
         let tooltip = new Tooltips.Tooltip(
             card,
             this._tooltipText(provider, bars)
         );
-        this._tooltips.push({
-            providerId: provider.id,
-            tooltip,
-        });
 
         if (helpIcon) {
-            let helpTooltip = new Tooltips.Tooltip(
+            new Tooltips.Tooltip(
                 helpIcon,
                 this._helpText(provider, bars, now)
             );
@@ -605,18 +574,13 @@ AIUsageDesklet.prototype = {
                 tooltip.preventShow = false;
                 return Clutter.EVENT_PROPAGATE;
             });
-            this._tooltips.push({
-                providerId: provider.id,
-                tooltip: helpTooltip,
-            });
         }
         return card;
     },
 
     _render: function (state) {
-        this._tooltips = [];
         this._countdownLabels = [];
-        this._providerCards = {};
+        this._footerLabels = [];
         let root = new St.BoxLayout({
             vertical: true,
             width: this._contentWidth(),
@@ -652,9 +616,8 @@ AIUsageDesklet.prototype = {
     },
 
     _renderError: function (message) {
-        this._tooltips = [];
         this._countdownLabels = [];
-        this._providerCards = {};
+        this._footerLabels = [];
         let root = new St.BoxLayout({
             vertical: true,
             width: this._contentWidth(),
@@ -707,16 +670,41 @@ AIUsageDesklet.prototype = {
 
     _refresh: function () {
         try {
-            this._stateReadCount += 1;
             let [ok, contents] = GLib.file_get_contents(STATE_PATH);
             if (!ok)
                 throw new Error("state.json could not be read");
             let state = JSON.parse(ByteArray.toString(contents));
             if (!state || state.schema !== 1 || !Array.isArray(state.providers))
                 throw new Error("state.json has an unsupported schema");
-            this._render(state);
+            // Only visible content should force a rebuild: generated_at moves
+            // every poll, and fetched_at / next_attempt_at move on every
+            // successful one, while the footer age is kept live by the
+            // one-second tick instead.
+            let key = JSON.stringify(state.providers.map(provider =>
+                provider && typeof provider === "object"
+                    ? Object.assign({}, provider, {
+                        fetched_at: 0,
+                        next_attempt_at: 0,
+                    })
+                    : provider));
+            if (key !== this._renderedKey || !this._root) {
+                this._render(state);
+                this._renderedKey = key;
+            } else {
+                let byId = {};
+                state.providers.forEach(provider => {
+                    if (provider && typeof provider === "object")
+                        byId[provider.id] = provider;
+                });
+                this._footerLabels.forEach(entry => {
+                    let provider = byId[entry.providerId];
+                    if (provider)
+                        entry.fetchedAt = Number(provider.fetched_at);
+                });
+            }
         } catch (error) {
             global.logError(`AI Usage desklet: ${error.message || error}`);
+            this._renderedKey = null;
             try {
                 this._renderError("Usage data unavailable");
             } catch (renderError) {
