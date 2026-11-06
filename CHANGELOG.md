@@ -26,9 +26,12 @@ This project follows [Semantic Versioning](https://semver.org/).
   reset, and ChatGPT carries a subscription end date inside its signed login
   token, shown only while that date is still in the future because the token's
   claims are rewritten only on re-login and can lag by months. Claude and
-  OpenRouter publish nothing, so they show no date, and no date is ever
-  computed locally. Available to every front end through two new optional
-  `state.json` fields, `renews_at` and `renews_period`.
+  OpenRouter publish nothing: Claude's API exposes no renewal date in its usage
+  or account payloads at all, and no billing endpoint exists to ask, so Claude
+  can never show one — a missing date beside the plan pill is the API being
+  silent, not the desklet failing. No date is ever computed locally. Available
+  to every front end through two new optional `state.json` fields,
+  `renews_at` and `renews_period`.
 - **An XFCE version of the card** (`xfce/`): the same one-glass-card design as a
   standalone GTK 3 desktop window, with its own installer and autostart entry,
   reading the same poller state file, for desktops without Cinnamon.
