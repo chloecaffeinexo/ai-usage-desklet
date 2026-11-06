@@ -31,8 +31,10 @@ Two desktop front ends share one poller:
   its monthly budget reset, and ChatGPT puts a subscription end date inside its
   signed login token (shown while that date is still in the future, because the
   token's claims can lag a re-login by months). Claude and OpenRouter publish
-  nothing, so those cards show no date rather than a guess, and the same rule
-  applies everywhere: no date is ever computed locally.
+  nothing: Claude's API exposes no renewal date at all, in its usage or account
+  payloads or at any billing endpoint, so Claude can never show one — a missing
+  date beside the plan pill is the API being silent, not the desklet failing.
+  The same rule applies everywhere: no date is ever computed locally.
 - **Credit balance / spend** where the provider reports one.
 - A per-card **staleness indicator**: if a reading can't be refreshed, the card
   dims and shows how long ago it was last good, rather than lying or going
