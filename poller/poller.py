@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch and normalise Claude and ChatGPT subscription usage."""
+"""Fetch and normalise AI subscription usage for the AI Usage desklet."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from normalise import ProviderError, provider_error, state_document
-from providers import chatgpt, claude
+from providers import chatgpt, claude, mistral, opencode, openrouter
 
 
 CACHE_DIR = Path.home() / ".cache" / "ai-usage-desklet"
@@ -24,7 +24,16 @@ BACKOFF_SECONDS = 300
 IDLE_INTERVAL_SECONDS = 600
 ACTIVITY_WINDOW_SECONDS = 600
 MAX_THROTTLE_INTERVAL_SECONDS = 600
-BASE_INTERVALS = {"claude": 120, "chatgpt": 30}
+# OpenRouter is a slow credit balance. OpenCode's windows are dollar-denominated
+# and only move when a job runs.
+BASE_INTERVALS = {
+    "claude": 120,
+    "chatgpt": 30,
+    "openrouter": 300,
+    "opencode": 120,
+    # Mistral's allowance is monthly and dollar-denominated, so it moves slowly.
+    "mistral": 300,
+}
 
 
 def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
@@ -404,6 +413,8 @@ def collect(
     chatgpt_auth: Path,
     codex_sessions: Path,
     claude_sessions: Path,
+    openrouter_auth: Path,
+    opencode_auth: Path,
     *,
     force: bool,
     backoff_enabled: bool,
@@ -432,6 +443,27 @@ def collect(
     def fetch_chatgpt() -> tuple[dict[str, Any], dict[str, Any]]:
         return chatgpt.fetch(chatgpt_auth, codex_sessions), {}
 
+    def fetch_openrouter() -> tuple[dict[str, Any], dict[str, Any]]:
+        return openrouter.fetch(openrouter_auth), {}
+
+    def fetch_opencode() -> tuple[dict[str, Any], dict[str, Any]]:
+        return opencode.fetch(opencode_auth), {}
+
+    def fetch_mistral() -> tuple[dict[str, Any], dict[str, Any]]:
+        return mistral.fetch(), {}
+
+    # A provider with no usable key gets no card at all, rather than a dead one.
+    specs: list[tuple[str, str, Callable[[], tuple[dict[str, Any], dict[str, Any]]]]] = [
+        ("claude", "Claude", fetch_claude),
+        ("chatgpt", "ChatGPT", fetch_chatgpt),
+    ]
+    if openrouter.available(openrouter_auth):
+        specs.append(("openrouter", "OpenRouter", fetch_openrouter))
+    if opencode.available(opencode_auth):
+        specs.append(("opencode", "OpenCode", fetch_opencode))
+    if mistral.available():
+        specs.append(("mistral", "Mistral", fetch_mistral))
+
     providers = [
         _poll_provider(
             cache,
@@ -444,10 +476,7 @@ def collect(
             force,
             backoff_enabled,
         )
-        for provider_id, label, fetcher in (
-            ("claude", "Claude", fetch_claude),
-            ("chatgpt", "ChatGPT", fetch_chatgpt),
-        )
+        for provider_id, label, fetcher in specs
     ]
 
     # Stamp the next scheduled attempt on every card, including the ones skipped
@@ -468,6 +497,8 @@ def run_once(args: argparse.Namespace) -> dict[str, Any]:
         args.chatgpt_auth,
         args.codex_sessions,
         args.claude_sessions,
+        args.openrouter_auth,
+        args.opencode_auth,
         force=args.force,
         backoff_enabled=not args.no_backoff,
         idle_slowdown_enabled=not args.no_idle_slowdown,
@@ -512,7 +543,19 @@ def parse_args() -> argparse.Namespace:
         default=Path.home() / ".claude" / "projects",
         help="Claude session transcript directory used only for activity freshness",
     )
-    parser.add_argument("--force", action="store_true", help="poll both providers now")
+    parser.add_argument(
+        "--openrouter-auth",
+        type=Path,
+        default=openrouter.DEFAULT_AUTH,
+        help="OpenRouter key file, read only",
+    )
+    parser.add_argument(
+        "--opencode-auth",
+        type=Path,
+        default=opencode.DEFAULT_AUTH,
+        help="OpenCode Go key file, read only",
+    )
+    parser.add_argument("--force", action="store_true", help="poll all providers now")
     parser.add_argument(
         "--no-backoff", action="store_true", help="disable five-minute failure backoff"
     )

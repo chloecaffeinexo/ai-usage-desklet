@@ -3,6 +3,92 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-06
+
+### Added
+
+- **The OpenCode Go card**, this time reading the account rather than guessing.
+  OpenCode publishes `GET /zen/go/v1/usage`, which returns the same rolling,
+  weekly and monthly percentages and reset instants the console dashboard draws.
+  The card reads that endpoint with a Go API key from
+  `~/.local/share/ai-usage-desklet/opencode.env`, so it counts usage made on
+  your other devices and cannot drift from the console. A window whose status
+  is not `ok` is drawn as spent rather than trusting its floored percentage.
+  The 0.6.0 removal stood on the claim that no usage API existed; that claim
+  expired, so the card is back.
+- **A Mistral card.** Reads the monthly Vibe Code and API budgets from
+  Mistral's own billing endpoints, using the API key the Mistral CLI stores in
+  your desktop keyring at sign-in (read only). Appears only when that key is
+  present.
+- **Plan renewal dates.** The plan pill is now followed by the date the plan
+  clocks over, monthly or yearly, wherever the provider actually returns one:
+  OpenCode publishes its monthly window's reset, Mistral its monthly budget
+  reset, and ChatGPT carries a subscription end date inside its signed login
+  token, shown only while that date is still in the future because the token's
+  claims are rewritten only on re-login and can lag by months. Claude and
+  OpenRouter publish nothing, so they show no date, and no date is ever
+  computed locally. Available to every front end through two new optional
+  `state.json` fields, `renews_at` and `renews_period`.
+- **An XFCE version of the card** (`xfce/`): the same one-glass-card design as a
+  standalone GTK 3 desktop window, with its own installer and autostart entry,
+  reading the same poller state file, for desktops without Cinnamon.
+- A **test suite for the renewal fields**, covering the stale ChatGPT claim
+  (a past date must never be shown), the monthly and yearly period detection,
+  and the OpenCode and Mistral wiring.
+
+### Changed
+
+- **One card for everything.** The Cinnamon desklet previously drew one card
+  per provider; it now draws a single Orchis-Purple-Dark glass card with the
+  shared header, provider sections separated by hairline rules, plan pills and
+  thin rounded meters in the accent purple, exactly as the XFCE card is drawn.
+  Sections sit in the order Claude, ChatGPT, OpenCode, Mistral, then any other
+  provider. The previous per-provider glass fills with the blue palette are
+  gone with them.
+- **Meters restyled to match the XFCE card**: a plain translucent track and a
+  horizontal fill shading from a lighter tone into the accent colour, grey when
+  a section is stale. The countdown moved up beside the percentage on the row
+  above the bar, where the XFCE card draws it.
+
+### Removed
+
+- **A retired provider's card.** One provider left this desklet's supported set
+  before this version was published; its adapter, tests, fixtures, settings and
+  every mention are gone from the code and the docs.
+
+## [0.6.0] - 2026-08-28
+
+### Added
+
+- **OpenRouter card.** One account-wide bar of spend against total credits, plus the remaining
+  balance. The API publishes no reset instant, so the card carries no countdown rather than a
+  computed one. A per-key limit is a cap on the same shared account balance rather than a
+  separate budget, so it is deliberately not shown as a bar; the per-key spend appears as a
+  note instead.
+- Two new settings switches for the new cards, and sign-in help text for each.
+- **A test suite.** Unit tests covering the adapters against recorded API fixtures,
+  with no network access.
+
+### Changed
+
+- **The meters are drawn as glass.** The three severity colours are unchanged; what changed is
+  the lighting. A fill now runs from a tint of its colour along the top to a deeper tone along
+  the bottom and carries a bright highlight over its top half, so it reads as a rounded tube
+  rather than a flat block. The empty track is lit the opposite way, dark along the top lip and
+  catching light at the bottom, which is how a channel cut into glass reads. On a light card
+  the track's two stops swap, since there the groove is read from its shadow.
+- **A meter's own label is set bold**, so the line above the bar reads as one name-and-number
+  pair, matching the row the Android widget settled on.
+- A provider you are not signed in to now produces no card at all rather than a dead one. This
+  already applied to some cards and is now consistent across all four.
+
+### Removed
+
+- **The OpenCode Go card.** It computed usage locally against a single flat monthly cap, but
+  Go gives each model its own quota and reports the sum of the per-model percentages, so the
+  card read low and could not be fixed from the data available on this machine. Only the
+  OpenCode web console has the real figures.
+
 ## [0.5.0] - 2026-08-13
 
 ### Added
@@ -147,6 +233,8 @@ No settings or schema changes.
   fallback, staleness indicators, eight live settings, and credential-safe polling
   (reads only, no token ever written to state, logs, or error strings).
 
+[0.7.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/chloecaffeinexo/ai-usage-desklet/compare/v0.2.0...v0.3.0

@@ -35,7 +35,10 @@
             "title": "Providers",
             "keys": [
                 "show-claude",
-                "show-chatgpt"
+                "show-chatgpt",
+                "show-openrouter",
+                "show-opencode",
+                "show-mistral"
             ]
         },
         "details-section": {
@@ -71,6 +74,9 @@
             "keys": [
                 "help-text-claude-signin",
                 "help-text-chatgpt-signin",
+                "help-text-openrouter-signin",
+                "help-text-opencode-signin",
+                "help-text-mistral-signin",
                 "help-text-check"
             ]
         },
@@ -121,6 +127,21 @@
         "default": true,
         "description": "Show ChatGPT"
     },
+    "show-openrouter": {
+        "type": "switch",
+        "default": true,
+        "description": "Show OpenRouter (only appears if a key file is present)"
+    },
+    "show-opencode": {
+        "type": "switch",
+        "default": true,
+        "description": "Show OpenCode Go (only appears if a key file is present)"
+    },
+    "show-mistral": {
+        "type": "switch",
+        "default": true,
+        "description": "Show Mistral (only appears if the Mistral CLI or Vibe is signed in)"
+    },
     "show-credits": {
         "type": "switch",
         "default": true,
@@ -159,6 +180,18 @@
     "help-text-chatgpt-signin": {
         "type": "label",
         "description": "ChatGPT: open a terminal, type  codex login  and press enter"
+    },
+    "help-text-openrouter-signin": {
+        "type": "label",
+        "description": "OpenRouter: this card reads a key file at  ~/.local/share/ai-usage-desklet/openrouter.env  and shows your account-wide credit. The per-key limit is a cap on that same balance, not a separate budget, so it is not shown as a bar."
+    },
+    "help-text-opencode-signin": {
+        "type": "label",
+        "description": "OpenCode Go: this card reads a key file at  ~/.local/share/ai-usage-desklet/opencode.env  and asks OpenCode's own usage endpoint, so it shows the same rolling, weekly and monthly percentages as the console, including usage made on your other devices. The plan is a flat monthly fee and the endpoint publishes no dollars, so there is no credits row."
+    },
+    "help-text-mistral-signin": {
+        "type": "label",
+        "description": "Mistral: this card reads the API key the Mistral CLI (vibe) stores in your desktop keyring at sign-in, and asks Mistral's billing endpoints for the monthly Vibe Code and API budgets. Sign in again with  vibe  in a terminal if the card says the sign-in has expired."
     },
     "help-text-check": {
         "type": "label",

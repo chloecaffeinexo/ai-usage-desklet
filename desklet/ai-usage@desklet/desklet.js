@@ -22,15 +22,23 @@ const SEVERITIES = ["normal", "warning", "critical"];
 const PROVIDER_URIS = {
     claude: "https://claude.ai/settings/usage",
     chatgpt: "https://chatgpt.com/#settings/Account",
+    openrouter: "https://openrouter.ai/credits",
+    opencode: "https://opencode.ai/auth",
+    mistral: "https://admin.mistral.ai/organization/usage",
 };
 // How to sign in again, per provider. Written for someone who does not live in a
 // terminal, so it names the command rather than assuming it.
 const PROVIDER_SIGNIN = {
     claude: "Open a terminal, type  claude  and press enter, then type  /login",
     chatgpt: "Open a terminal, type  codex login  and press enter",
+    openrouter: "Add your OpenRouter key to  ~/.local/share/ai-usage-desklet/openrouter.env",
+    opencode: "Add your OpenCode Go key to  ~/.local/share/ai-usage-desklet/opencode.env",
+    mistral: "In a terminal: vibe, then sign in",
 };
 // Index of the Help page in settings-schema.json's page list.
 const HELP_PAGE_INDEX = 2;
+// The card's section order, matching the XFCE AI Usage card.
+const PROVIDER_ORDER = ["claude", "chatgpt", "opencode", "mistral", "openrouter"];
 // Settings key to property, all bound identically.
 const SETTING_BINDINGS = [
     ["card-style", "cardStyle"],
@@ -38,6 +46,9 @@ const SETTING_BINDINGS = [
     ["content-width", "contentWidth"],
     ["show-claude", "showClaude"],
     ["show-chatgpt", "showChatgpt"],
+    ["show-openrouter", "showOpenrouter"],
+    ["show-opencode", "showOpencode"],
+    ["show-mistral", "showMistral"],
     ["show-credits", "showCredits"],
     ["show-inactive", "showInactive"],
     ["show-help", "showHelp"],
@@ -71,6 +82,9 @@ AIUsageDesklet.prototype = {
         this.contentWidth = DEFAULT_CONTENT_WIDTH;
         this.showClaude = true;
         this.showChatgpt = true;
+        this.showOpenrouter = true;
+        this.showOpencode = true;
+        this.showMistral = true;
         this.showCredits = true;
         this.showInactive = true;
         this.showHelp = true;
@@ -207,7 +221,9 @@ AIUsageDesklet.prototype = {
         let valid = Number.isFinite(resetAt) && resetAt > 0;
         let resetting = valid && now >= resetAt;
         entry.pill.visible = resetting;
-        if (!valid) {
+        if (entry.noReset) {
+            entry.label.set_text("");
+        } else if (!valid) {
             entry.label.set_text("reset unavailable");
         } else if (resetting) {
             entry.label.set_text(" ");
@@ -239,15 +255,19 @@ AIUsageDesklet.prototype = {
         });
         let pct = Math.min(100, Math.max(0, Number(bar.percent) || 0));
         let severity = this._severity(bar.severity);
+        // One row above the meter, as the XFCE card draws it: the window name
+        // and pill on the left, the countdown and percentage on the right.
         let labelRow = new St.BoxLayout({
             vertical: false,
             width: this._trackWidth(),
             style_class: "aiu-label-row",
         });
-        labelRow.add(this._label(bar.label || "Limit", "aiu-label"));
+        labelRow.add(this._label(bar.label || "Limit", "aiu-label aiu-bar-label"));
         let resettingPill = this._label("resetting…", "aiu-resetting-pill");
         labelRow.add(resettingPill);
         labelRow.add(new St.Widget({ x_expand: true }));
+        let countdownLabel = this._label("", "aiu-countdown");
+        labelRow.add(countdownLabel);
         labelRow.add(this._label(
             `${Math.round(pct)}%`,
             `aiu-percent aiu-severity-${severity}`
@@ -269,24 +289,32 @@ AIUsageDesklet.prototype = {
         track.add_child(fill);
         box.add(track);
 
-        let resetRow = new St.BoxLayout({
-            vertical: false,
-            width: this._trackWidth(),
-            style_class: "aiu-countdown-row",
-        });
-        resetRow.add(new St.Widget({ x_expand: true }));
-        let countdownLabel = this._label("", "aiu-countdown");
-        resetRow.add(countdownLabel);
-        box.add(resetRow);
-
         let countdownEntry = {
             label: countdownLabel,
             pill: resettingPill,
             resetsAt: Number(bar.resets_at),
+            // An explicit null means the provider publishes no reset instant at
+            // all, which is not the same as one we failed to read.
+            noReset: bar.resets_at === null,
         };
         this._countdownLabels.push(countdownEntry);
         this._updateCountdownEntry(countdownEntry, now);
         return box;
+    },
+
+    // The plan's clock-over date, in the poller's own words. The poller only
+    // publishes renews_at where the provider returns a real field, so an
+    // absent value means no date was ever guessed at.
+    _renewalText: function (provider) {
+        let renewsAt = Number(provider.renews_at);
+        if (!Number.isFinite(renewsAt) || renewsAt <= 0)
+            return "";
+        let date = GLib.DateTime.new_from_unix_local(Math.round(renewsAt));
+        let now = GLib.DateTime.new_now_local();
+        let pattern = date.get_year() === now.get_year() ? "%e %b" : "%e %b %Y";
+        let text = (date.format(pattern) || "").replace(/\s+/g, " ").trim();
+        let period = provider.renews_period;
+        return period ? `renews ${text}, ${period}` : `renews ${text}`;
     },
 
     _formatAbsoluteTime: function (timestamp) {
@@ -330,6 +358,8 @@ AIUsageDesklet.prototype = {
             .filter(bar => bar && typeof bar === "object")
             .map(bar => {
                 let label = bar.label || "Limit";
+                if (bar.resets_at === null)
+                    return `${label}: no reset time published`;
                 return `${label} resets ${this._formatAbsoluteTime(bar.resets_at)}`;
             });
         lines.push(this._creditsTooltipText(provider.credits));
@@ -417,7 +447,9 @@ AIUsageDesklet.prototype = {
             bars.forEach(bar => {
                 if (bar && typeof bar === "object") {
                     lines.push(
-                        `${bar.label || "Limit"} resets ${this._formatAbsoluteTime(bar.resets_at)}.`
+                        bar.resets_at === null
+                            ? `${bar.label || "Limit"} has no reset time published.`
+                            : `${bar.label || "Limit"} resets ${this._formatAbsoluteTime(bar.resets_at)}.`
                     );
                 }
             });
@@ -455,23 +487,17 @@ AIUsageDesklet.prototype = {
         }
     },
 
-    _providerCard: function (provider, now, index) {
+    _providerSection: function (provider, now) {
         let stale = provider.stale === true || provider.ok === false;
-        let classes = ["aiu-card", this._cardStyleClass()];
-        if (index > 0)
-            classes.push("aiu-card-spaced");
-        if (stale)
-            classes.push("aiu-card-stale");
-
-        let card = new St.BoxLayout({
+        let section = new St.BoxLayout({
             vertical: true,
-            width: this._contentWidth(),
+            width: this._trackWidth(),
             reactive: true,
             track_hover: true,
             can_focus: true,
-            style_class: classes.join(" "),
+            style_class: stale ? "aiu-section aiu-section-stale" : "aiu-section",
         });
-        card.connect("button-release-event", () => {
+        section.connect("button-release-event", () => {
             this._openProvider(provider.id);
             return Clutter.EVENT_STOP;
         });
@@ -481,35 +507,52 @@ AIUsageDesklet.prototype = {
             width: this._trackWidth(),
             style_class: "aiu-provider-header",
         });
-        let plan = provider.plan && provider.plan !== "Unknown" ? ` · ${provider.plan}` : "";
         header.add(this._label(
-            `${provider.label || provider.id || "Provider"}${plan}`,
+            provider.label || provider.id || "Provider",
             "aiu-provider-name"
         ));
+        // The plan sits in its own pill beside the name, and the renewal date
+        // beside the pill, exactly as the XFCE card draws them. The poller only
+        // publishes a renewal where the provider returns a real field.
+        if (provider.plan && provider.plan !== "Unknown")
+            header.add(this._label(provider.plan, "aiu-plan-pill"));
+        let renewal = this._renewalText(provider);
+        if (renewal)
+            header.add(this._label(renewal, "aiu-renews"));
+        header.add(new St.Widget({ x_expand: true }));
         if (provider.ok === false) {
             header.add(this._label(
                 provider.error_short || "unavailable",
                 "aiu-error-pill"
             ));
         }
-        // The help marker is the only thing on the right of the header, so the
-        // spacer goes in with it and the row is unchanged when help is off.
+        let footer = this._label(
+            this._formatAge(provider.fetched_at, now),
+            "aiu-footer"
+        );
+        header.add(footer);
+        this._footerLabels.push({
+            label: footer,
+            fetchedAt: Number(provider.fetched_at),
+            providerId: provider.id,
+        });
+        // The help marker sits at the very right of the header, so the row is
+        // unchanged when help is off apart from the marker itself.
         let helpIcon = null;
         if (this.showHelp) {
-            header.add(new St.Widget({ x_expand: true }));
             helpIcon = this._label("?", "aiu-help");
             helpIcon.reactive = true;
             helpIcon.track_hover = true;
             helpIcon.can_focus = true;
             helpIcon.connect("button-release-event", () => {
                 this._openHelpSettings();
-                // Stop here, or the click also falls through to the card and
+                // Stop here, or the click also falls through to the section and
                 // opens the provider's usage page in a browser.
                 return Clutter.EVENT_STOP;
             });
             header.add(helpIcon);
         }
-        card.add(header);
+        section.add(header);
 
         let barsBox = new St.BoxLayout({
             vertical: true,
@@ -524,7 +567,7 @@ AIUsageDesklet.prototype = {
                     barsBox.add(this._bar(bar, now, barIndex));
             });
         }
-        card.add(barsBox);
+        section.add(barsBox);
 
         if (this.showCredits) {
             let credits = provider.credits;
@@ -532,7 +575,7 @@ AIUsageDesklet.prototype = {
                 credits && typeof credits === "object" ? credits.severity : "normal"
             );
             this._addRow(
-                card,
+                section,
                 "Credits",
                 this._creditsText(credits),
                 "aiu-label",
@@ -541,19 +584,8 @@ AIUsageDesklet.prototype = {
             );
         }
 
-        let footer = this._label(
-            this._formatAge(provider.fetched_at, now),
-            "aiu-footer"
-        );
-        card.add(footer);
-        this._footerLabels.push({
-            label: footer,
-            fetchedAt: Number(provider.fetched_at),
-            providerId: provider.id,
-        });
-
         let tooltip = new Tooltips.Tooltip(
-            card,
+            section,
             this._tooltipText(provider, bars)
         );
 
@@ -563,8 +595,8 @@ AIUsageDesklet.prototype = {
                 this._helpText(provider, bars, now)
             );
             // Cinnamon has no tooltip manager, and the pointer is still inside
-            // the card while it is over the ?, so both tooltips would show at
-            // once. Mute the card's while the marker is hovered.
+            // the section while it is over the ?, so both tooltips would show at
+            // once. Mute the section's while the marker is hovered.
             helpIcon.connect("enter-event", () => {
                 tooltip.preventShow = true;
                 tooltip.hide();
@@ -575,7 +607,7 @@ AIUsageDesklet.prototype = {
                 return Clutter.EVENT_PROPAGATE;
             });
         }
-        return card;
+        return section;
     },
 
     _render: function (state) {
@@ -586,7 +618,6 @@ AIUsageDesklet.prototype = {
             width: this._contentWidth(),
             style_class: `aiu-root ${this._densityClass()}`,
         });
-        root.add(this._label("AI Usage", "aiu-title"));
 
         let now = Math.floor(Date.now() / 1000);
         let providers = state && Array.isArray(state.providers)
@@ -597,22 +628,59 @@ AIUsageDesklet.prototype = {
                     return this.showClaude;
                 if (provider.id === "chatgpt")
                     return this.showChatgpt;
+                if (provider.id === "openrouter")
+                    return this.showOpenrouter;
+                if (provider.id === "opencode")
+                    return this.showOpencode;
+                if (provider.id === "mistral")
+                    return this.showMistral;
                 return true;
             })
             : [];
         if (providers.length === 0) {
             root.add(this._label("No providers shown", "aiu-waiting"));
         } else {
-            providers.forEach((provider, index) => {
-                if (provider && typeof provider === "object")
-                    root.add(this._providerCard(provider, now, index));
+            // One card for the whole desklet, sections in the XFCE card's
+            // order, separated by hairline rules.
+            let rank = {};
+            PROVIDER_ORDER.forEach((id, index) => { rank[id] = index; });
+            providers.sort((a, b) => {
+                let ra = rank[a.id] !== undefined ? rank[a.id] : PROVIDER_ORDER.length;
+                let rb = rank[b.id] !== undefined ? rank[b.id] : PROVIDER_ORDER.length;
+                return ra - rb;
             });
+            let card = new St.BoxLayout({
+                vertical: true,
+                width: this._contentWidth(),
+                style_class: `aiu-card ${this._cardStyleClass()}`,
+            });
+            let head = new St.BoxLayout({
+                vertical: false,
+                width: this._trackWidth(),
+                style_class: "aiu-card-header",
+            });
+            head.add(this._label("●", "aiu-head-dot"));
+            head.add(this._label("AI USAGE", "aiu-head"));
+            card.add(head);
+            providers.forEach((provider, index) => {
+                if (index > 0)
+                    card.add(this._rule());
+                card.add(this._providerSection(provider, now));
+            });
+            root.add(card);
         }
 
         if (this._root)
             this._root.destroy();
         this._root = root;
         this.setContent(root);
+    },
+
+    _rule: function () {
+        return new St.Widget({
+            width: this._trackWidth(),
+            style_class: "aiu-rule",
+        });
     },
 
     _renderError: function (message) {
@@ -623,12 +691,21 @@ AIUsageDesklet.prototype = {
             width: this._contentWidth(),
             style_class: `aiu-root ${this._densityClass()} aiu-error-root`,
         });
-        root.add(this._label("AI Usage", "aiu-title"));
         let card = new St.BoxLayout({
             vertical: true,
             width: this._contentWidth(),
             style_class: `aiu-card ${this._cardStyleClass()}`,
         });
+        let head = new St.BoxLayout({
+            vertical: false,
+            width: this._trackWidth(),
+            style_class: "aiu-card-header",
+        });
+        // The error view keeps the heading, because it is the only thing
+        // saying which desklet the orphaned card belongs to.
+        head.add(this._label("●", "aiu-head-dot"));
+        head.add(this._label("AI USAGE", "aiu-head"));
+        card.add(head);
         card.add(this._label(message, "aiu-unavailable"));
         root.add(card);
         if (this._root)

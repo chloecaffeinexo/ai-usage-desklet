@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from normalise import (
     number,
     percent,
     request_json,
+    safe_id,
     severity,
     window_label,
 )
@@ -185,6 +187,35 @@ def _window(item: Any, bar_id: str) -> dict[str, Any] | None:
     }
 
 
+def _additional_bars(raw: Any) -> list[dict[str, Any]]:
+    """Extra named limits, empty on every account so far (6 Nov 2026).
+
+    OpenAI has announced a shared ChatGPT and Codex allowance from December 2026,
+    and Codex itself already parses named, metered limits here. Each entry is read
+    as a name plus the same primary/secondary windows as the main rate limit; an
+    entry in any other shape is skipped rather than guessed at, so the main bars
+    are never put at risk by it.
+    """
+    if not isinstance(raw, list):
+        return []
+    bars: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            continue
+        name = next(
+            (entry[k] for k in ("limit_name", "metered_limit_name", "metered_feature")
+             if isinstance(entry.get(k), str) and entry[k].strip()),
+            f"Limit {index + 1}",
+        )
+        windows = entry.get("rate_limit") if isinstance(entry.get("rate_limit"), dict) else entry
+        for key in ("primary_window", "secondary_window"):
+            bar = _window(windows.get(key), safe_id(f"{name}_{key}", f"extra_{index}_{key}"))
+            if bar is not None:
+                bar["label"] = f"{name.replace('_', ' ').strip().capitalize()} · {bar['label']}"
+                bars.append(bar)
+    return bars
+
+
 def _balance_text(balance: Any) -> str:
     """Render a credit balance readably: the API sends up to ten decimals."""
     parsed = number(balance)
@@ -208,6 +239,50 @@ def _credits(payload: dict[str, Any]) -> dict[str, Any]:
         "note": "limit reached" if reached else None,
         "short_text": "unlimited" if unlimited else balance_text,
     }
+
+
+def _renewal(auth_path: Path) -> tuple[int | None, str | None]:
+    """The plan's billing clock-over, from OpenAI's own signed id_token claims.
+
+    The id_token carries chatgpt_subscription_active_start and _until inside
+    its ``https://api.openai.com/auth`` claim. Those claims are only rewritten
+    when the CLI re-authenticates, so an "until" in the past means the claims
+    have gone stale, not that the plan ended: the plan itself is re-read live
+    from the usage API on every poll. Only a future "until" is returned, and the
+    monthly/yearly label comes from the measured start-to-until gap, so no date
+    or period is ever computed from a calendar or guessed. Measured 6 Nov 2026:
+    the usage endpoint publishes no renewal field, and this account's claims
+    carried a July "until" while the plan was live, which is why a past value is
+    treated as no value at all.
+    """
+    try:
+        data = json.loads(auth_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None
+    token = data.get("tokens", {}).get("id_token") if isinstance(data, dict) else None
+    if not isinstance(token, str) or token.count(".") != 2:
+        return None, None
+    segment = token.split(".")[1]
+    try:
+        padded = segment + "=" * (-len(segment) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+    except (ValueError, TypeError):
+        return None, None
+    auth = claims.get("https://api.openai.com/auth") if isinstance(claims, dict) else None
+    if not isinstance(auth, dict):
+        return None, None
+    start = epoch_from_iso(auth.get("chatgpt_subscription_active_start"))
+    until = epoch_from_iso(auth.get("chatgpt_subscription_active_until"))
+    if until is None or until <= int(time.time()):
+        return None, None
+    if start is None:
+        return until, None
+    span = until - start
+    if 25 * 86_400 <= span <= 35 * 86_400:
+        return until, "monthly"
+    if 340 * 86_400 <= span <= 400 * 86_400:
+        return until, "yearly"
+    return until, None
 
 
 def fetch(
@@ -236,11 +311,13 @@ def fetch(
         bars.append(primary)
     if secondary is not None:
         bars.append(secondary)
+    bars.extend(_additional_bars(payload.get("additional_rate_limits")))
     if not bars:
         raise ProviderError("usage response contained no valid limits", "bad response")
 
     raw_plan = payload.get("plan_type")
     plan = raw_plan.replace("_", " ").title() if isinstance(raw_plan, str) else "Unknown"
+    renews_at, renews_period = _renewal(auth_path)
     return {
         "id": "chatgpt",
         "label": "ChatGPT",
@@ -255,4 +332,6 @@ def fetch(
         "error_short": None,
         "bars": bars,
         "credits": _credits(payload),
+        "renews_at": renews_at,
+        "renews_period": renews_period,
     }

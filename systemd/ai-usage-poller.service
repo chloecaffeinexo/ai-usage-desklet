@@ -1,5 +1,5 @@
 [Unit]
-Description=Fetch Claude and ChatGPT subscription usage
+Description=Fetch AI subscription usage for the AI Usage desklet
 Documentation=file://%h/.local/share/ai-usage-desklet/README.md
 
 [Service]

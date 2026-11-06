@@ -1,0 +1,117 @@
+/* AI Usage for XFCE: one glass card in the Orchis-Purple-Dark palette.
+
+   Palette: accent #BA68C8, surfaces #212121/#2C2C2C, red #F44336, amber
+   #FBC02D, green #81C995. Card glass is the desktop panel's dark at 0.72
+   alpha, no blur. Sizes are in pt so they follow Xft.dpi; never add font
+   scaling on top. */
+
+window.xd-window,
+window.xd-window > * {
+    background-color: transparent;
+}
+
+.xd-root {
+    font-family: Inter, Sans;
+    font-feature-settings: "tnum";
+}
+
+/* --- the card ---------------------------------------------------------- */
+
+.xd-card {
+    background-color: rgba(33, 33, 33, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.30);
+    padding: 12px 14px 12px 14px;
+    margin: 6px;
+}
+.xd-card-solid { background-color: rgba(33, 33, 33, 0.94); }
+
+/* No compositor: translucency would draw black, so go solid. */
+.xd-opaque .xd-card { background-color: #2C2C2C; }
+
+/* Header row inside the card: accent dot, small caps title. */
+.xd-head {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+.xd-head-dot { color: #BA68C8; font-size: 7.5pt; }
+.xd-meta {
+    color: rgba(255, 255, 255, 0.40);
+    font-size: 7.5pt;
+}
+
+separator.xd-rule {
+    background-color: rgba(255, 255, 255, 0.08);
+    min-height: 1px;
+    margin: 4px 0;
+}
+
+/* --- text -------------------------------------------------------------- */
+
+.xd-name {
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 9.5pt;
+    font-weight: 600;
+}
+.xd-label {
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 8.5pt;
+}
+.xd-value {
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 8.5pt;
+    font-weight: 600;
+}
+.xd-small {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 7.5pt;
+}
+.xd-muted {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 8.5pt;
+}
+
+/* Plan and status pills. */
+.xd-pill {
+    font-size: 7pt;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 0 6px;
+    margin-left: 6px;
+}
+.xd-pill-plan {
+    color: #E1BEE7;
+    background-color: rgba(186, 104, 200, 0.20);
+}
+.xd-pill-error {
+    color: #FFAB9F;
+    background-color: rgba(244, 67, 54, 0.18);
+}
+.xd-pill-reset {
+    color: #FFE082;
+    background-color: rgba(251, 192, 45, 0.16);
+}
+
+/* The plan renewal date beside the pill, in the poller's words. */
+.xd-renews {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 7.5pt;
+    margin-left: 8px;
+}
+
+/* --- severity ---------------------------------------------------------- */
+
+.xd-sev-normal   { color: rgba(255, 255, 255, 0.96); }
+.xd-sev-warning  { color: #FBC02D; }
+.xd-sev-critical { color: #F44336; }
+.xd-good.xd-sev-normal { color: #81C995; }
+
+.xd-stale { opacity: 0.55; }
+
+tooltip, tooltip * {
+    font-family: Inter, Sans;
+    font-size: 9pt;
+}

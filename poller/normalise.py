@@ -240,6 +240,8 @@ def provider_error(
         "error_short": error_short[:16],
         "bars": [],
         "credits": None,
+        "renews_at": None,
+        "renews_period": None,
     }
 
 

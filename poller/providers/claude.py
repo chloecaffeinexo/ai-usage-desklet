@@ -113,6 +113,10 @@ def _plan_from_profile(headers: dict[str, str]) -> str | None:
         mapped = PLAN_BY_RATE_LIMIT_TIER.get(tier.strip().lower())
         if mapped:
             return mapped
+        # Ultra (added late Oct 2026) has no published tier string yet. Checked
+        # before has_claude_max so an Ultra account is never labelled Max.
+        if "ultra" in tier.lower():
+            return "Ultra"
 
     if account.get("has_claude_max"):
         return "Max"

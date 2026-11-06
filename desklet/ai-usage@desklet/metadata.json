@@ -1,7 +1,7 @@
 {
     "uuid": "ai-usage@desklet",
     "name": "AI Usage",
-    "description": "Shows Claude and ChatGPT subscription usage limits, reset times, and credits.",
+    "description": "Shows Claude, ChatGPT, OpenCode Go, Mistral and OpenRouter usage limits, reset times, and credits.",
     "max-instances": "1",
-    "version": "0.5.0"
+    "version": "0.7.0"
 }

@@ -1,67 +1,128 @@
+/*
+  One glass card in the Orchis-Purple-Dark palette, matching the XFCE AI Usage
+  card: accent #BA68C8, surfaces #212121/#2C2C2C, red #F44336, amber #FBC02D,
+  green #81C995. Card glass is the desktop panel's dark at 0.72 alpha, solid
+  style at 0.94. Section heads carry name, plan pill, renewal date and age;
+  meters are thin rounded fills with a horizontal soft gradient, grey when stale.
+*/
+
 .aiu-root {
     font-family: Sans;
 }
 
-.aiu-title {
-    color: rgba(255, 255, 255, 0.96);
-    font-family: Sans;
-    font-size: 17px;
-    font-weight: 700;
-    margin-left: 18px;
-    margin-bottom: 10px;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
-}
+/* --- the card ---------------------------------------------------------- */
 
 .aiu-card {
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 16px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
     /* Cinnamon scales CSS lengths at 2x on the target desktop. */
-    padding: 7px;
+    padding: 7px 9px;
 }
 
 .aiu-card-dark {
-    background-color: rgba(18, 18, 22, 0.55);
-}
-
-.aiu-card-light {
-    background-color: rgba(245, 245, 248, 0.55);
-    border-color: rgba(0, 0, 0, 0.12);
+    background-color: rgba(33, 33, 33, 0.72);
 }
 
 .aiu-card-solid {
-    background-color: rgba(18, 18, 22, 0.92);
+    background-color: rgba(33, 33, 33, 0.94);
 }
 
-.aiu-card-spaced {
-    margin-top: 6px;
+.aiu-card-light {
+    background-color: rgba(245, 245, 248, 0.78);
+    border-color: rgba(0, 0, 0, 0.12);
 }
 
-.aiu-card-stale {
+/*
+  The shared header inside the single card: accent dot, spaced capitals.
+  letter-spacing is ignored by themes that do not understand it, and the row
+  still reads correctly without it.
+*/
+.aiu-card-header {
+    spacing: 5px;
+    margin-bottom: 3px;
+}
+
+.aiu-head-dot {
+    color: #BA68C8;
+    font-size: 9px;
+}
+
+.aiu-head {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+/* Hairline rule between provider sections. */
+.aiu-rule {
+    height: 1px;
+    margin: 3px 0;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* --- provider section --------------------------------------------------- */
+
+.aiu-section {
+    spacing: 2px;
+}
+
+.aiu-section-stale {
     opacity: 0.55;
 }
 
 .aiu-provider-header {
-    spacing: 1px;
+    spacing: 0px;
 }
 
 .aiu-provider-name {
-    color: rgba(255, 255, 255, 0.98);
+    color: rgba(255, 255, 255, 0.96);
     font-family: Sans;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+/* The plan pill beside the name, in the accent's own tint. */
+.aiu-plan-pill {
+    color: #E1BEE7;
+    background-color: rgba(186, 104, 200, 0.20);
+    border-radius: 6px;
+    font-family: "DejaVu Sans Condensed";
+    font-size: 8px;
+    font-weight: 500;
+    margin-left: 6px;
+    padding: 1px 4px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
+}
+
+/* The renewal date beside the pill, in the poller's own words. */
+.aiu-renews {
+    color: rgba(255, 255, 255, 0.42);
+    font-family: Sans;
+    font-size: 10px;
+    font-weight: 400;
+    margin-left: 8px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+.aiu-footer {
+    color: rgba(255, 255, 255, 0.42);
+    font-family: Sans;
+    font-size: 10px;
+    font-weight: 400;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
 }
 
 .aiu-error-pill {
-    color: #f87171;
-    background-color: rgba(248, 113, 113, 0.12);
-    border: 1px solid rgba(248, 113, 113, 0.38);
-    border-radius: 8px;
+    color: #FFAB9F;
+    background-color: rgba(244, 67, 54, 0.18);
+    border-radius: 6px;
     font-family: "DejaVu Sans Condensed";
-    font-size: 7px;
+    font-size: 8px;
     font-weight: 500;
-    padding: 1px;
+    padding: 1px 4px;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
 }
 
@@ -84,34 +145,11 @@
     border: 1px solid rgba(255, 255, 255, 0.42);
 }
 
-.aiu-card-light .aiu-help {
-    color: rgba(18, 18, 22, 0.45);
-    background-color: rgba(18, 18, 22, 0.07);
-    border: 1px solid rgba(18, 18, 22, 0.18);
-    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
-}
-
-.aiu-card-light .aiu-help:hover {
-    color: rgba(18, 18, 22, 0.95);
-    background-color: rgba(18, 18, 22, 0.16);
-    border: 1px solid rgba(18, 18, 22, 0.45);
-}
-
-.aiu-resetting-pill {
-    color: #fbbf24;
-    background-color: rgba(251, 191, 36, 0.12);
-    border: 1px solid rgba(251, 191, 36, 0.38);
-    border-radius: 7px;
-    font-family: "DejaVu Sans Condensed";
-    font-size: 7px;
-    font-weight: 500;
-    margin-left: 4px;
-    padding: 1px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
-}
+/* --- meters ------------------------------------------------------------- */
 
 .aiu-bars {
     margin-top: 5px;
+    spacing: 4px;
 }
 
 .aiu-bar-group-spaced {
@@ -119,81 +157,116 @@
 }
 
 .aiu-label-row {
-    spacing: 8px;
+    spacing: 6px;
 }
 
 .aiu-label,
 .aiu-value {
-    color: rgba(255, 255, 255, 0.92);
+    color: rgba(255, 255, 255, 0.74);
     font-family: Sans;
     font-size: 12px;
     font-weight: 400;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
+}
+
+/*
+  A meter's own label is set bold, so the top line reads as one name-and-number
+  pair rather than a caption with a figure after it.
+*/
+.aiu-bar-label {
+    font-weight: 700;
 }
 
 .aiu-value {
     font-weight: 600;
 }
 
-.aiu-percent {
+.aiu-countdown {
+    color: rgba(255, 255, 255, 0.42);
     font-family: Sans;
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 10px;
+    font-weight: 400;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
 }
 
-.aiu-percent.aiu-severity-normal {
+.aiu-percent {
     color: rgba(255, 255, 255, 0.96);
+    font-family: Sans;
+    font-size: 12px;
+    font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
 }
 
 .aiu-percent.aiu-severity-warning {
-    color: #fbbf24;
+    color: #FBC02D;
 }
 
 .aiu-percent.aiu-severity-critical {
-    color: #f87171;
+    color: #F44336;
 }
 
+.aiu-resetting-pill {
+    color: #FFE082;
+    background-color: rgba(251, 192, 45, 0.16);
+    border-radius: 6px;
+    font-family: "DejaVu Sans Condensed";
+    font-size: 7px;
+    font-weight: 500;
+    margin-left: 4px;
+    padding: 1px 3px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.90);
+}
+
+/*
+  The meter itself, as the XFCE card draws it: a rounded full-height track in a
+  plain translucent white, carrying a fill that shades horizontally from a
+  lighter tone at the left to the accent tone at the right. St's gradients are
+  the mechanism; background-color keeps a flat fallback for themes that do not
+  draw them.
+*/
 .aiu-bar-track {
     height: 6px;
     margin-top: 2px;
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: rgba(255, 255, 255, 0.10);
     border-radius: 3px;
 }
 
 .aiu-bar-fill {
     height: 6px;
     border-radius: 3px;
+    background-gradient-direction: horizontal;
 }
 
 .aiu-bar-fill.aiu-severity-normal {
-    background-color: #7dd3fc;
+    background-color: #BA68C8;
+    background-gradient-start: #CE93D8;
+    background-gradient-end: #BA68C8;
 }
 
 .aiu-bar-fill.aiu-severity-warning {
-    background-color: #fbbf24;
+    background-color: #FBC02D;
+    background-gradient-start: #FDD835;
+    background-gradient-end: #FBC02D;
 }
 
 .aiu-bar-fill.aiu-severity-critical {
-    background-color: #f87171;
+    background-color: #F44336;
+    background-gradient-start: #EF736B;
+    background-gradient-end: #F44336;
 }
 
-.aiu-card-stale .aiu-bar-fill {
-    background-color: #8a8f98;
+/*
+  A stale section restates both gradient stops rather than only
+  background-color: a gradient wins over a flat colour in St, so setting the
+  colour alone would leave a stale meter still showing its severity.
+*/
+.aiu-section-stale .aiu-bar-fill {
+    background-color: #757575;
+    background-gradient-start: #9E9E9E;
+    background-gradient-end: #757575;
 }
 
-.aiu-countdown-row {
-    margin-top: 1px;
-}
-
-.aiu-countdown,
-.aiu-footer {
-    color: rgba(255, 255, 255, 0.55);
-    font-family: Sans;
-    font-size: 10px;
-    font-weight: 400;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
-}
+/* --- credits ------------------------------------------------------------ */
 
 .aiu-credits-row {
     margin-top: 5px;
@@ -201,31 +274,24 @@
 }
 
 .aiu-credit-value {
+    color: rgba(255, 255, 255, 0.96);
     font-family: Sans;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 600;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.90);
 }
 
-.aiu-credit-value.aiu-severity-normal {
-    color: #7dd3fc;
-}
-
 .aiu-credit-value.aiu-severity-warning {
-    color: #fbbf24;
+    color: #FBC02D;
 }
 
 .aiu-credit-value.aiu-severity-critical {
-    color: #f87171;
-}
-
-.aiu-footer {
-    margin-top: 4px;
+    color: #F44336;
 }
 
 .aiu-unavailable,
 .aiu-waiting {
-    color: rgba(255, 255, 255, 0.72);
+    color: rgba(255, 255, 255, 0.55);
     font-family: Sans;
     font-size: 11px;
     font-weight: 400;
@@ -236,53 +302,104 @@
     margin-left: 18px;
 }
 
+/* --- light card --------------------------------------------------------- */
+
+.aiu-card-light .aiu-head-dot {
+    color: #8E44AD;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
+}
+
+.aiu-card-light .aiu-head,
+.aiu-card-light .aiu-plan-pill {
+    color: rgba(33, 33, 33, 0.62);
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
+}
+
+.aiu-card-light .aiu-plan-pill {
+    background-color: rgba(186, 104, 200, 0.28);
+}
+
 .aiu-card-light .aiu-provider-name,
 .aiu-card-light .aiu-label,
 .aiu-card-light .aiu-value,
-.aiu-card-light .aiu-percent.aiu-severity-normal {
-    color: rgba(18, 18, 22, 0.92);
+.aiu-card-light .aiu-percent,
+.aiu-card-light .aiu-credit-value {
+    color: rgba(33, 33, 33, 0.92);
     text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
 }
 
+.aiu-card-light .aiu-percent.aiu-severity-warning,
+.aiu-card-light .aiu-credit-value.aiu-severity-warning {
+    color: #B58900;
+}
+
+.aiu-card-light .aiu-percent.aiu-severity-critical,
+.aiu-card-light .aiu-credit-value.aiu-severity-critical {
+    color: #C62828;
+}
+
+.aiu-card-light .aiu-renews,
 .aiu-card-light .aiu-countdown,
 .aiu-card-light .aiu-footer,
 .aiu-card-light .aiu-unavailable {
-    color: rgba(18, 18, 22, 0.58);
+    color: rgba(33, 33, 33, 0.58);
     text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
 }
 
-.aiu-card-light .aiu-bar-track {
-    background-color: rgba(18, 18, 22, 0.14);
+.aiu-card-light .aiu-help {
+    color: rgba(33, 33, 33, 0.45);
+    background-color: rgba(33, 33, 33, 0.07);
+    border: 1px solid rgba(33, 33, 33, 0.18);
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.75);
 }
+
+.aiu-card-light .aiu-help:hover {
+    color: rgba(33, 33, 33, 0.95);
+    background-color: rgba(33, 33, 33, 0.16);
+    border: 1px solid rgba(33, 33, 33, 0.45);
+}
+
+.aiu-card-light .aiu-bar-track {
+    background-color: rgba(33, 33, 33, 0.12);
+}
+
+.aiu-card-light .aiu-bar-fill.aiu-severity-normal {
+    background-color: #BA68C8;
+    background-gradient-start: #BA68C8;
+    background-gradient-end: #9C4DAC;
+}
+
+/* --- density ----------------------------------------------------------- */
 
 .aiu-density-standard .aiu-card {
-    padding: 18px;
+    padding: 14px 16px;
 }
 
-.aiu-density-standard .aiu-card-spaced {
-    margin-top: 14px;
+.aiu-density-standard .aiu-card-header {
+    margin-bottom: 6px;
+}
+
+.aiu-density-standard .aiu-rule {
+    margin: 6px 0;
+}
+
+.aiu-density-standard .aiu-section {
+    spacing: 4px;
 }
 
 .aiu-density-standard .aiu-bars {
-    margin-top: 14px;
+    margin-top: 10px;
+    spacing: 8px;
 }
 
 .aiu-density-standard .aiu-bar-group-spaced {
-    margin-top: 14px;
+    margin-top: 10px;
 }
 
 .aiu-density-standard .aiu-bar-track {
-    margin-top: 6px;
-}
-
-.aiu-density-standard .aiu-countdown-row {
-    margin-top: 4px;
+    margin-top: 5px;
 }
 
 .aiu-density-standard .aiu-credits-row {
-    margin-top: 14px;
-}
-
-.aiu-density-standard .aiu-footer {
-    margin-top: 14px;
+    margin-top: 10px;
 }

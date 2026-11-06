@@ -1,0 +1,14 @@
+{
+  "data": {
+    "label": "sk-or-v1-REDACTED",
+    "limit": 50,
+    "limit_remaining": 40,
+    "usage": 10,
+    "usage_daily": 0,
+    "usage_weekly": 1.5,
+    "usage_monthly": 10,
+    "limit_reset": null,
+    "is_free_tier": false,
+    "is_provisioning_key": false
+  }
+}
